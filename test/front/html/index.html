@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Hello World Relay</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+        body { font-family: Arial, sans-serif; margin: 2rem; }
+        .card { max-width: 400px; padding: 1.5rem; border: 1px solid #ddd; border-radius: 8px; }
+        input, button { width: 100%; padding: 0.5rem; margin-top: 0.5rem; }
+        #latestMessage { margin-top: 1rem; font-weight: bold; }
+        #status { margin-top: 0.5rem; color: #0a7f2e; }
+        #error { margin-top: 0.5rem; color: #c0392b; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>Hello World 메시지 테스트</h2>
+        <label for="messageInput">메시지 입력</label>
+        <input id="messageInput" type="text" placeholder="Hello World" />
+        <button onclick="sendMessage()">메시지 저장</button>
+        <button onclick="loadMessage()">가장 최근 메시지 불러오기</button>
+        <div id="status"></div>
+        <div id="error"></div>
+        <div id="latestMessage">최근 메시지: (없음)</div>
+    </div>
+
+    <script>
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const statusEl = document.getElementById('status');
+            const errorEl = document.getElementById('error');
+            statusEl.textContent = '';
+            errorEl.textContent = '';
+
+            if (!input.value.trim()) {
+                errorEl.textContent = '메시지를 입력해주세요.';
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/message', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content: input.value.trim() })
+                });
+
+                if (!response.ok) {
+                    const payload = await response.json();
+                    throw new Error(payload.detail || '메시지 저장 실패');
+                }
+
+                statusEl.textContent = '메시지가 저장되었습니다.';
+                input.value = '';
+                await loadMessage();
+            } catch (err) {
+                errorEl.textContent = err.message;
+            }
+        }
+
+        async function loadMessage() {
+            const latestMessageEl = document.getElementById('latestMessage');
+            const errorEl = document.getElementById('error');
+            errorEl.textContent = '';
+
+            try {
+                const response = await fetch('/api/message');
+                if (!response.ok) {
+                    const payload = await response.json();
+                    throw new Error(payload.detail || '메시지 조회 실패');
+                }
+
+                const data = await response.json();
+                if (!data.content) {
+                    latestMessageEl.textContent = '최근 메시지: (없음)';
+                } else {
+                    const stamp = data.created_at ? ` @ ${data.created_at}` : '';
+                    latestMessageEl.textContent = `최근 메시지: ${data.content}${stamp}`;
+                }
+            } catch (err) {
+                errorEl.textContent = err.message;
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', loadMessage);
+    </script>
+</body>
+</html>
