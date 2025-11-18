@@ -15,14 +15,14 @@
 </head>
 <body>
     <div class="card">
-        <h2>Hello World 메시지 테스트</h2>
-        <label for="messageInput">메시지 입력</label>
+        <h2>Hello World Message Test</h2>
+        <label for="messageInput">Enter a message</label>
         <input id="messageInput" type="text" placeholder="Hello World" />
-        <button onclick="sendMessage()">메시지 저장</button>
-        <button onclick="loadMessage()">가장 최근 메시지 불러오기</button>
+        <button onclick="sendMessage()">Save Message</button>
+        <button onclick="loadMessage()">Load Latest Message</button>
         <div id="status"></div>
         <div id="error"></div>
-        <div id="latestMessage">최근 메시지: (없음)</div>
+        <div id="latestMessage">Latest message: (none)</div>
     </div>
 
     <script>
@@ -34,7 +34,7 @@
             errorEl.textContent = '';
 
             if (!input.value.trim()) {
-                errorEl.textContent = '메시지를 입력해주세요.';
+                errorEl.textContent = 'Please enter a message.';
                 return;
             }
 
@@ -47,10 +47,10 @@
 
                 if (!response.ok) {
                     const payload = await response.json();
-                    throw new Error(payload.detail || '메시지 저장 실패');
+                    throw new Error(payload.detail || 'Failed to store message');
                 }
 
-                statusEl.textContent = '메시지가 저장되었습니다.';
+                statusEl.textContent = 'Message stored successfully.';
                 input.value = '';
                 await loadMessage();
             } catch (err) {
@@ -67,15 +67,15 @@
                 const response = await fetch('/api/message');
                 if (!response.ok) {
                     const payload = await response.json();
-                    throw new Error(payload.detail || '메시지 조회 실패');
+                    throw new Error(payload.detail || 'Failed to fetch message');
                 }
 
                 const data = await response.json();
                 if (!data.content) {
-                    latestMessageEl.textContent = '최근 메시지: (없음)';
+                    latestMessageEl.textContent = 'Latest message: (none)';
                 } else {
                     const stamp = data.created_at ? ` @ ${data.created_at}` : '';
-                    latestMessageEl.textContent = `최근 메시지: ${data.content}${stamp}`;
+                    latestMessageEl.textContent = `Latest message: ${data.content}${stamp}`;
                 }
             } catch (err) {
                 errorEl.textContent = err.message;
