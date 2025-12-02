@@ -1,0 +1,47 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: medinote_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: #추가하셈 !
+      POSTGRES_DB: medinote
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d medinote"]
+      interval: 5s
+      retries: 5
+      start_period: 5s
+
+  backend:
+    build:
+      context: ./Medinote_backend
+    container_name: medinote_backend
+    environment:
+      DATABASE_URL: #추가하셈 !
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./medinote_front
+      args:
+        VITE_API_URL: http://localhost:8000
+    container_name: medinote_frontend
+    depends_on:
+      - backend
+    ports:
+      - "4173:4173"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
