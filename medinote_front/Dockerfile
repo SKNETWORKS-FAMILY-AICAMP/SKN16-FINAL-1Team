@@ -5,11 +5,13 @@ WORKDIR /app
 # 🔧 Vite용 API URL (build 시에 주입)
 ARG VITE_API_URL
 ENV VITE_API_URL=${VITE_API_URL}
-ENV NODE_ENV=production
 
 # 패키지 설치
 COPY package*.json ./
 RUN npm ci
+
+ENV NODE_ENV=production
+
 
 # 소스 복사 및 빌드
 COPY . .

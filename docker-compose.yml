@@ -6,7 +6,7 @@ services:
     container_name: medinote_db
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: #추가하셈 !
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: medinote
     ports:
       - "5432:5432"
@@ -23,7 +23,8 @@ services:
       context: ./Medinote_backend
     container_name: medinote_backend
     environment:
-      DATABASE_URL: #추가하셈 !
+      DATABASE_URL: ${DATABASE_URL}
+      FRONTEND_URL: ${FRONTEND_URL}
     depends_on:
       db:
         condition: service_healthy
@@ -35,7 +36,7 @@ services:
     build:
       context: ./medinote_front
       args:
-        VITE_API_URL: http://localhost:8000
+        VITE_API_URL: ${VITE_API_URL}
     container_name: medinote_frontend
     depends_on:
       - backend

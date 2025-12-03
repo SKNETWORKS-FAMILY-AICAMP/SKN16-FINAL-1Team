@@ -11,9 +11,12 @@ from routers.visit_router import router as visit_router
 from routers.prescription_router import router as prescription_router
 from routers.schedule_router import router as schedule_router
 
+import os
 
 
 Base.metadata.create_all(bind=engine)
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:4173")
+
 
 app = FastAPI()
 
@@ -23,6 +26,7 @@ app.add_middleware(
         "http://localhost:5173",
         "http://10.0.2.2:5173",
         "http://localhost:4173",
+        FRONTEND_URL,
     ],
     allow_credentials=True,
     allow_methods=["*"],
