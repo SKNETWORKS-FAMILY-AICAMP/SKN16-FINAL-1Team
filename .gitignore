@@ -1,56 +1,19 @@
-# ---- Python ----
+# Python
 __pycache__/
-*.py[cod]
+*.pyc
 *.pyo
 *.pyd
-*.so
-*.egg
-*.egg-info/
-dist/
-build/
-
-# ---- Environment ----
-.env
-.env.*
-.venv/
 venv/
-ENV/
-env/
+.env
 
-# ---- Logs ----
-*.log
-*.out
-*.err
+# Node / React
+node_modules/
+dist/
+*.local
 
-# ---- IDE ----
-.vscode/
-.idea/
-*.swp
-*.swo
+# Docker volume
+postgres_data/
 
-# ---- macOS ----
+# OS
 .DS_Store
-
-# ---- Python Byte-compiled ----
-*.pyc
-
-# ---- Cache ----
-.cache/
-.pytest_cache/
-.mypy_cache/
-
-# ---- Local Databases ----
-*.db
-*.sqlite3
-
-# ---- Tooling ----
-celerybeat-schedule
-instance/
-
-# ---- FastAPI/Swagger ----
-.openapi.json
-
-# ---- Uploaded Files ----
-uploads/
-media/
-files/
+Thumbs.db
