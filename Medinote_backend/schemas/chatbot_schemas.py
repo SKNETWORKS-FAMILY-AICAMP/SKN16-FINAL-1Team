@@ -4,47 +4,53 @@ from datetime import datetime
 
 
 # ============================================================
-# 1) 세션 목록 (사이드바)
+# 1) 세션 목록 (GET /chatbot/sessions)
 # ============================================================
 
-class ChatSessionItem(BaseModel):
+class SessionItem(BaseModel):
     session_id: int
     title: str
-    created_at: datetime   # FastAPI가 자동 ISO8601로 변환
+    created_at: str   # ISO 문자열 반환
+
+    class Config:
+        from_attributes = True   # ORM → Pydantic 변환 허용
 
 
-class ChatSessionListResponse(BaseModel):
-    sessions: List[ChatSessionItem]
+class SessionsResponse(BaseModel):
+    sessions: List[SessionItem]
 
 
 # ============================================================
-# 2) 특정 세션의 전체 메시지
+# 2) 특정 세션 상세 조회 (GET /chatbot/sessions/{session_id})
 # ============================================================
 
-class ChatMessageItem(BaseModel):
-    role: str
+class SessionMessage(BaseModel):
+    role: str           # "user" | "assistant"
     content: str
-    created_at: datetime   # DB timestamp → 자동 변환
+    created_at: str     # ISO 문자열
+
+    class Config:
+        from_attributes = True
 
 
-class ChatSessionDetailResponse(BaseModel):
+class SessionDetailResponse(BaseModel):
     session_id: int
-    messages: List[ChatMessageItem]
+    messages: List[SessionMessage]
 
 
 # ============================================================
-# 3) POST /chatbot/query 요청
+# 3) POST /chatbot/query 요청 스키마
 # ============================================================
 
-class ChatbotQueryRequest(BaseModel):
-    session_id: Optional[int] = None
+class ChatQueryRequest(BaseModel):
+    session_id: Optional[int] = 0   # 없음 → 자동 새 세션
     query: str
 
 
 # ============================================================
-# 4) POST /chatbot/query 응답
+# 4) POST /chatbot/query 응답 스키마
 # ============================================================
 
-class ChatbotQueryResponse(BaseModel):
+class ChatQueryResponse(BaseModel):
     session_id: int
     answer: str
