@@ -265,3 +265,22 @@ class ChatLog(Base):
     session = relationship("ChatSession", back_populates="logs")
 
 
+# ============================================================
+# STT JOB (음성 분석 결과 저장)
+# ============================================================
+class STTJob(Base):
+    __tablename__ = "stt_jobs"
+
+    stt_id = Column(String, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
+
+    status = Column(String(20), default="pending")  # pending / processing / done / error
+    diagnosis = Column(String(200), nullable=True)
+    symptoms = Column(Text, nullable=True)
+    notes = Column(Text, nullable=True)
+    date = Column(String(20), nullable=True)
+
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, onupdate=func.now())
+
+    user = relationship("User", back_populates="stt_jobs")
