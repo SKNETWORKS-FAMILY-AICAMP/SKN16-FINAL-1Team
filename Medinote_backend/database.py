@@ -15,7 +15,6 @@ if not SQLALCHEMY_DATABASE_URL:
         "DATABASE_URL is not set. "
         "Medinote_backend/.env 또는 Docker 환경변수를 확인하세요."
     )
-
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -28,3 +27,4 @@ def get_db():
         yield db
     finally:
         db.close()
+

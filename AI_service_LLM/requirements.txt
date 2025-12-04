@@ -1,0 +1,20 @@
+fastapi
+uvicorn[standard]
+
+# LangGraph / LLM / RAG
+langgraph
+openai>=1.0.0
+chromadb
+tavily-python
+langsmith
+
+# DB
+sqlalchemy
+psycopg2-binary
+
+# 기타 유틸
+python-dotenv
+
+# 테스트
+pytest
+httpx

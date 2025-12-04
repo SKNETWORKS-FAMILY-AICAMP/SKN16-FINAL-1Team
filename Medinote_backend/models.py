@@ -228,5 +228,40 @@ class Schedule(Base):
 
     user = relationship("User")
 
+# ============================================================
+# CHATBOT SESSION
+# ============================================================
+class ChatSession(Base):
+    __tablename__ = "chat_session"
+
+    session_id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    title = Column(String(100), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # 관계 설정
+    logs = relationship(
+        "ChatLog",
+        back_populates="session",
+        cascade="all, delete-orphan"
+    )
+
+
+# ============================================================
+# CHATBOT LOG (대화 기록)
+# ============================================================
+class ChatLog(Base):
+    __tablename__ = "chat_log"
+
+    chat_id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(Integer, ForeignKey("chat_session.session_id"), nullable=False)
+    user_id = Column(Integer, nullable=False)
+
+    query = Column(Text, nullable=True)      # user 메시지
+    answer = Column(Text, nullable=True)     # assistant 메시지
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # 관계 설정
+    session = relationship("ChatSession", back_populates="logs")
 
 
