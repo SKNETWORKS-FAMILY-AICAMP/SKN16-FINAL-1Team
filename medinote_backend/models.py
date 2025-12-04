@@ -271,14 +271,16 @@ class ChatLog(Base):
 class STTJob(Base):
     __tablename__ = "stt_jobs"
 
-    stt_id = Column(String, primary_key=True, index=True)
+    stt_id = Column(String(50), primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
 
     status = Column(String(20), default="pending")  # pending / processing / done / error
     diagnosis = Column(String(200), nullable=True)
     symptoms = Column(Text, nullable=True)
     notes = Column(Text, nullable=True)
-    date = Column(String(20), nullable=True)
+
+    # ⭐ Date 타입으로 수정 (중요)
+    date = Column(Date, nullable=True)
 
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())

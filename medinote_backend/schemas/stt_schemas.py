@@ -1,4 +1,3 @@
-# schemas/stt_schemas.py
 # ============================================================
 # STT SCHEMAS
 # ============================================================
@@ -23,7 +22,7 @@ class STTAnalyzeResponse(BaseModel):
 # Whisper → 백엔드 결과 전달용 (POST /stt/{stt_id}/result)
 # ------------------------------------------------------------
 class STTResultInput(BaseModel):
-    status: str                    # "done" 또는 "error"
+    status: str                    # "done" / "error"
     diagnosis: Optional[str] = None
     symptoms: Optional[str] = None
     notes: Optional[str] = None
@@ -34,7 +33,7 @@ class STTResultInput(BaseModel):
 
 
 # ------------------------------------------------------------
-# STT 상태/결과 조회용 (GET /stt/{stt_id}/status)
+# STT 상태 조회 응답 (GET /stt/{stt_id}/status)
 # ------------------------------------------------------------
 class STTStatusResponse(BaseModel):
     stt_id: str
@@ -47,3 +46,22 @@ class STTStatusResponse(BaseModel):
 
     class Config:
         orm_mode = True
+
+
+# ============================================================
+# STT 결과 기반으로 VISIT 저장 요청
+# (사용자가 '저장' 버튼을 눌렀을 때)
+# ------------------------------------------------------------
+class STTCreateVisitRequest(BaseModel):
+    hospital: str
+    dept: str
+    diagnosis_code: str
+    doctor_name: Optional[str] = None
+
+
+# ------------------------------------------------------------
+# STT 결과 기반 VISIT 저장 응답
+# ------------------------------------------------------------
+class STTCreateVisitResponse(BaseModel):
+    message: str
+    visit_id: int

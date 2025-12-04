@@ -6,15 +6,20 @@ from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from database import get_db
+
 from crud.stt_crud import (
     create_stt_job,
     get_stt_job,
     update_stt_result,
+    create_visit_from_stt
 )
+
 from schemas.stt_schemas import (
     STTAnalyzeResponse,
     STTStatusResponse,
     STTResultInput,
+    STTCreateVisitRequest,
+    STTCreateVisitResponse
 )
 
 router = APIRouter(prefix="/stt", tags=["STT"])
@@ -43,9 +48,7 @@ async def analyze_stt(
     # STTJob 생성
     stt_item = create_stt_job(db, user_id=user_id)
 
-    # ⚠ 파일 자체는 현재 백엔드에서 별도 처리하지 않음
-    #    (로컬 저장/S3 업로드/Whisper 연동은 이후 단계에서 추가)
-
+    # (주의) 파일 자체 저장/처리는 추후 단계에서 구현
     return STTAnalyzeResponse(
         user_id=user_id,
         stt_id=stt_item.stt_id,
@@ -86,6 +89,7 @@ async def receive_stt_result(
     """
     STT 담당자가 Whisper 실행 후,
     stt_id 기준으로 결과를 백엔드에 넘기는 엔드포인트.
+    STTJob 테이블에 변환 결과 저장.
     """
 
     updated = update_stt_result(db, stt_id, result.dict())
@@ -93,3 +97,30 @@ async def receive_stt_result(
         raise HTTPException(status_code=404, detail="STT job not found")
 
     return {"message": "result saved", "stt_id": stt_id}
+
+
+# ------------------------------------------------------------
+# 4) STT 결과 기반 → VISIT 생성 (사용자가 '저장' 버튼 클릭)
+# ------------------------------------------------------------
+@router.post("/{stt_id}/visit", response_model=STTCreateVisitResponse)
+def create_visit_from_stt_api(
+    stt_id: str,
+    payload: STTCreateVisitRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    STTJob에 저장된 diagnosis/symptoms/notes/date 값을 기반으로
+    Visit 레코드를 생성한다.
+    병원, 진료과, 진단코드는 프론트에서 입력.
+    """
+
+    user_id = FAKE_USER_ID
+
+    visit = create_visit_from_stt(db, stt_id, user_id, payload)
+    if visit is None:
+        raise HTTPException(status_code=404, detail="STT job not found")
+
+    return STTCreateVisitResponse(
+        message="Visit created successfully",
+        visit_id=visit.visit_id
+    )
