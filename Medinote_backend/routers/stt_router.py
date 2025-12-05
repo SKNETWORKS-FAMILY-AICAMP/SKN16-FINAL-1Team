@@ -4,6 +4,8 @@
 
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from sqlalchemy.orm import Session
+import httpx
+import os
 
 from database import get_db
 from crud.stt_crud import (
@@ -22,6 +24,9 @@ router = APIRouter(prefix="/stt", tags=["STT"])
 # 테스트용 FAKE USER
 FAKE_USER_ID = 1
 
+# STT 서버 URL (Docker: stt, 로컬: localhost:8002)
+STT_SERVER_URL = os.getenv("STT_SERVER_URL", "http://stt:8002")
+
 
 # ------------------------------------------------------------
 # 1) STT 분석 시작 (stt_id 발급 + pending)
@@ -33,9 +38,7 @@ async def analyze_stt(
 ):
     """
     음성 파일을 받아 STT 작업(stt_id)을 생성하고
-    상태를 pending으로 두는 엔드포인트.
-    지금은 테스트이므로 user_id = 1로 고정.
-    Whisper 실행/연동은 STT 담당자가 별도 처리.
+    STT 서버로 전달하여 백그라운드 처리.
     """
 
     user_id = FAKE_USER_ID
@@ -43,8 +46,27 @@ async def analyze_stt(
     # STTJob 생성
     stt_item = create_stt_job(db, user_id=user_id)
 
-    # ⚠ 파일 자체는 현재 백엔드에서 별도 처리하지 않음
-    #    (로컬 저장/S3 업로드/Whisper 연동은 이후 단계에서 추가)
+    # STT 서버로 파일 전송
+    try:
+        file_content = await file.read()
+        await file.seek(0)  # 파일 포인터 리셋
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            files = {"file": (file.filename, file_content, file.content_type)}
+            data = {"stt_id": stt_item.stt_id}
+
+            response = await client.post(
+                f"{STT_SERVER_URL}/stt/process",
+                files=files,
+                data=data
+            )
+
+            if response.status_code != 200:
+                print(f"⚠️ STT 서버 요청 실패: {response.status_code}")
+
+    except Exception as e:
+        print(f"❌ STT 서버 연결 실패: {e}")
+        # 에러 발생해도 stt_id는 반환 (status=pending 유지)
 
     return STTAnalyzeResponse(
         user_id=user_id,

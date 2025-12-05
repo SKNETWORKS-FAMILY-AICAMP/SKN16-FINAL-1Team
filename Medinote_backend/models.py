@@ -265,3 +265,19 @@ class ChatLog(Base):
     session = relationship("ChatSession", back_populates="logs")
 
 
+# ============================================================
+# STT JOB (음성→텍스트 변환 작업)
+# ============================================================
+class STTJob(Base):
+    __tablename__ = "stt_job"
+
+    stt_id = Column(String(50), primary_key=True, index=True)
+    user_id = Column(Integer, nullable=False)
+    status = Column(String(20), nullable=False, default="pending")  # pending, done, error
+
+    diagnosis = Column(String(200), nullable=True)
+    symptoms = Column(Text, nullable=True)
+    notes = Column(Text, nullable=True)
+    date = Column(String(20), nullable=True)
+
+

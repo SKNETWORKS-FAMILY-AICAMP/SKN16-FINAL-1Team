@@ -11,6 +11,7 @@ from routers.visit_router import router as visit_router
 from routers.prescription_router import router as prescription_router
 from routers.schedule_router import router as schedule_router
 from routers.chatbot_router import router as chatbot_router
+from routers.stt_router import router as stt_router
 
 import os
 
@@ -46,3 +47,4 @@ app.include_router(visit_router)
 app.include_router(prescription_router)
 app.include_router(schedule_router)
 app.include_router(chatbot_router)
+app.include_router(stt_router)

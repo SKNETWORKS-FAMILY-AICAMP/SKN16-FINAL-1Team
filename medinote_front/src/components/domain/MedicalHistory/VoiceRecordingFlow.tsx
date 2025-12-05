@@ -4,6 +4,7 @@ import React, { useState, type ChangeEvent } from 'react';
 import { HiOutlineMicrophone, HiOutlineArrowLeft, HiOutlineCheck, HiOutlineSpeakerphone } from 'react-icons/hi';
 import { toast } from 'react-toastify';
 import { type HistoryFormData } from './HistoryForm'; 
+import { apiClient } from '../../../api/axios';
 
 type FlowStep = 'consent' | 'recording' | 'processing';
 type Props = {
@@ -16,26 +17,55 @@ export default function VoiceRecordingFlow({ onComplete, onCancel }: Props) {
   const [hasConsented, setHasConsented] = useState(false);
 
   // 파일 선택(녹음 완료) 핸들러
-  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) {
       toast.error("녹음 파일이 선택되지 않았습니다.");
       return;
     }
 
-    // 파일 오면 "처리 중" 로딩 UI로 변경
     setStep('processing');
-    toast.info("오디오 파일을 수신했습니다. 텍스트 변환을 시작합니다.");
+    toast.info("음성 파일 업로드 중...");
 
-    // 가상 STT API 호출(3초)
-    setTimeout(() => {
-      const fakeSTTData: Partial<HistoryFormData> = {
-        title: "스트레스성 편두통",
-        symptoms: "어제부터 머리가 아프고 속이 메스꺼움",
-        notes: "충분한 수면이 필요합니다."
+    try {
+      // 1) 파일 업로드 → stt_id 받기
+      const formData = new FormData();
+      formData.append('file', file);
+      const { data } = await apiClient.post('/stt/analyze', formData);
+      const sttId = data.stt_id;
+
+      toast.info("STT 처리 중... 잠시만 기다려주세요.");
+
+      // 2) Polling으로 결과 대기
+      const pollResult = async () => {
+        try {
+          const res = await apiClient.get(`/stt/${sttId}/status`);
+          if (res.data.status === 'done') {
+            // 3) 완료되면 결과를 form에 전달
+            toast.success("음성 변환 완료!");
+            onComplete({
+              title: res.data.diagnosis,
+              symptoms: res.data.symptoms,
+              notes: res.data.notes
+            });
+          } else if (res.data.status === 'error') {
+            toast.error('STT 처리 실패');
+            onCancel();
+          } else {
+            // pending이면 2초 후 재확인
+            setTimeout(pollResult, 2000);
+          }
+        } catch (err) {
+          toast.error('상태 확인 중 오류 발생');
+          onCancel();
+        }
       };
-      onComplete(fakeSTTData);
-    }, 3000);
+      pollResult();
+
+    } catch (err) {
+      toast.error('파일 업로드 실패');
+      onCancel();
+    }
   };
 
   // --- UI 렌더링 ---
