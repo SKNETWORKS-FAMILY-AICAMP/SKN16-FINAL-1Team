@@ -279,5 +279,3 @@ class STTJob(Base):
     symptoms = Column(Text, nullable=True)
     notes = Column(Text, nullable=True)
     date = Column(String(20), nullable=True)
-
-    created_at = Column(DateTime, server_default=func.now())
