@@ -1,260 +1,112 @@
-# crud/chatbot_crud.py
-from __future__ import annotations
-
-from datetime import datetime
-from typing import List, Optional
+from typing import Optional, List, Dict, Any
 
 from sqlalchemy.orm import Session
-
+from sqlalchemy import func
 from models import ChatSession, ChatLog
-from schemas.chatbot_schemas import (
-    ChatQueryRequest,
-    ChatQueryResponse,
-    SessionItem,
-    SessionMessage,
-    SessionDetailResponse,
-)
 
 
-# =========================================================
-# 내부 유틸
-# =========================================================
-
-def _build_title_from_query(query: str, max_len: int = 50) -> str:
-    title = (query or "").strip()
-    if not title:
-        title = "새로운 채팅"
-    if len(title) > max_len:
-        title = title[: max_len - 3] + "..."
-    return title
-
-
-def _now_iso() -> str:
-    return datetime.utcnow().isoformat()
-
-
-# =========================================================
-# 1) 대화 처리 (POST /chatbot/query)
-# =========================================================
-
-def handle_chat_query(
-    db: Session,
-    payload: ChatQueryRequest,
-    user_id: Optional[int] = None,
-) -> ChatQueryResponse:
-
-    uid = user_id if user_id is not None else 0
-
-    # 🔹 임시 답변 (나중에 LLM 호출로 교체)
-    answer_text = f"테스트 응답입니다. 당신이 말한 내용: {payload.query}"
-
-    # =====================================================
-    # 세션 생성 또는 조회
-    # =====================================================
-    if payload.session_id == 0:
-        # 새 세션 생성
-        new_session = ChatSession(
-            user_id=uid,
-            title=_build_title_from_query(payload.query),
-            created_at=datetime.utcnow(),   # 🔥 수정 1
-        )
-        db.add(new_session)
-        db.flush()
-        session_id = new_session.session_id
-
-    else:
-        # 기존 세션 조회
-        session = (
-            db.query(ChatSession)
-            .filter(ChatSession.session_id == payload.session_id)
-            .first()
-        )
-
-        if session is None:
-            # 세션이 없으면 새로 만듦
-            new_session = ChatSession(
-                user_id=uid,
-                title=_build_title_from_query(payload.query),
-                created_at=datetime.utcnow(),   # 🔥 수정 2
-            )
-            db.add(new_session)
-            db.flush()
-            session_id = new_session.session_id
-        else:
-            session_id = session.session_id
-
-    # =====================================================
-    # chat_log 저장 (user → assistant)
-    # =====================================================
-
-    now = datetime.utcnow()  # 🔥 수정 3 (안정적인 timestamp)
-    
-    # user 메시지
-    user_log = ChatLog(
-        session_id=session_id,
-        user_id=uid,
-        query=payload.query,
-        answer="",
-        created_at=now,
+# ============================================================
+# 1) 새 세션 생성
+# ============================================================
+def create_session(db: Session, user_id: int, title: str) -> ChatSession:
+    session = ChatSession(
+        user_id=user_id,
+        title=title
     )
-    db.add(user_log)
-
-    # assistant 메시지
-    assistant_log = ChatLog(
-        session_id=session_id,
-        user_id=uid,
-        query="",
-        answer=answer_text,
-        created_at=now,
-    )
-    db.add(assistant_log)
-
+    db.add(session)
     db.commit()
+    db.refresh(session)
+    return session
 
-    return ChatQueryResponse(
-        session_id=session_id,
-        answer=answer_text,
+
+# ============================================================
+# 2) 세션 하나 가져오기
+# ============================================================
+def get_session(db: Session, user_id: int, session_id: int) -> ChatSession | None:
+    return (
+        db.query(ChatSession)
+        .filter(
+            ChatSession.user_id == user_id,
+            ChatSession.session_id == session_id
+        )
+        .first()
     )
 
 
-# =========================================================
-# 2) 세션 목록 조회
-# =========================================================
-
-def get_chat_sessions(
+# ============================================================
+# 3) 메시지 저장 (한 줄)
+#    - role: "user" / "assistant"
+#    - content: 실제 메시지 텍스트
+#    - sources: assistant 메시지일 때만, 출처 리스트(JSON)
+# ============================================================
+def save_message(
     db: Session,
-    user_id: Optional[int] = None,
-    limit: int = 50,
-) -> List[SessionItem]:
+    user_id: int,
+    session_id: int,
+    role: str,
+    content: str,
+    sources: Optional[List[Dict[str, Any]]] = None,
+) -> ChatLog:
+    msg = ChatLog(
+        session_id=session_id,
+        user_id=user_id,
+        role=role,
+        content=content,
+        sources=sources,  # 🔥 새 필드 저장 (없으면 None)
+    )
+    db.add(msg)
+    db.commit()
+    db.refresh(msg)
+    return msg
 
-    q = db.query(ChatSession)
-    if user_id is not None:
-        q = q.filter(ChatSession.user_id == user_id)
 
-    sessions = (
-        q.order_by(ChatSession.created_at.desc())
-        .limit(limit)
+# ============================================================
+# 4) 세션 목록 조회 (사이드바)
+# ============================================================
+def get_session_list(db: Session, user_id: int):
+    return (
+        db.query(ChatSession)
+        .filter(ChatSession.user_id == user_id)
+        .order_by(ChatSession.created_at.desc())
         .all()
     )
 
-    items: List[SessionItem] = []
-    for s in sessions:
-        created_at = s.created_at.isoformat() if s.created_at else _now_iso()
-        items.append(
-            SessionItem(
-                session_id=s.session_id,
-                title=s.title,
-                created_at=created_at,
-            )
+
+# ============================================================
+# 5) 특정 세션의 전체 메시지 조회
+# ============================================================
+def get_session_messages(db: Session, user_id: int, session_id: int):
+    return (
+        db.query(ChatLog)
+        .filter(
+            ChatLog.user_id == user_id,
+            ChatLog.session_id == session_id
         )
-    return items
-
-
-# =========================================================
-# 3) 모든 세션 삭제
-# =========================================================
-
-def delete_all_chat_sessions(
-    db: Session,
-    user_id: Optional[int] = None,
-) -> None:
-
-    if user_id is not None:
-        session_ids = [
-            s.session_id
-            for s in db.query(ChatSession.session_id)
-            .filter(ChatSession.user_id == user_id)
-            .all()
-        ]
-
-        if session_ids:
-            db.query(ChatLog).filter(
-                ChatLog.session_id.in_(session_ids)
-            ).delete(synchronize_session=False)
-
-            db.query(ChatSession).filter(
-                ChatSession.session_id.in_(session_ids)
-            ).delete(synchronize_session=False)
-
-    else:
-        db.query(ChatLog).delete(synchronize_session=False)
-        db.query(ChatSession).delete(synchronize_session=False)
-
-    db.commit()
-
-
-# =========================================================
-# 4) 특정 세션 상세 조회
-# =========================================================
-
-def get_chat_session_detail(
-    db: Session,
-    session_id: int,
-    user_id: Optional[int] = None,
-) -> Optional[SessionDetailResponse]:
-
-    session = (
-        db.query(ChatSession)
-        .filter(ChatSession.session_id == session_id)
-        .first()
-    )
-    if session is None:
-        return None
-
-    q = db.query(ChatLog).filter(ChatLog.session_id == session_id)
-    if user_id is not None:
-        q = q.filter(ChatLog.user_id == user_id)
-
-    logs = q.order_by(ChatLog.created_at.asc()).all()
-    messages: List[SessionMessage] = []
-
-    for log in logs:
-        if log.query:
-            messages.append(
-                SessionMessage(
-                    role="user",
-                    content=log.query,
-                    created_at=log.created_at.isoformat()
-                    if log.created_at else _now_iso(),
-                )
-            )
-        if log.answer:
-            messages.append(
-                SessionMessage(
-                    role="assistant",
-                    content=log.answer,
-                    created_at=log.created_at.isoformat()
-                    if log.created_at else _now_iso(),
-                )
-            )
-
-    return SessionDetailResponse(
-        session_id=session_id,
-        messages=messages,
+        .order_by(ChatLog.created_at.asc())
+        .all()
     )
 
 
-# =========================================================
-# 5) 특정 세션 삭제
-# =========================================================
-
-def delete_chat_session(
-    db: Session,
-    session_id: int,
-    user_id: Optional[int] = None,
-) -> bool:
-
-    q = db.query(ChatSession).filter(ChatSession.session_id == session_id)
-    if user_id is not None:
-        q = q.filter(ChatSession.user_id == user_id)
-
-    session = q.first()
-    if session is None:
+# ============================================================
+# 6) 특정 세션 삭제
+# ============================================================
+def delete_session(db: Session, user_id: int, session_id: int) -> bool:
+    session = get_session(db, user_id, session_id)
+    if not session:
         return False
 
-    db.query(ChatLog).filter(ChatLog.session_id == session_id).delete(
-        synchronize_session=False
-    )
-    db.delete(session)
+    db.delete(session)   # cascade 로 메시지도 같이 삭제
     db.commit()
     return True
+
+
+# ============================================================
+# 7) 전체 세션 삭제
+# ============================================================
+def delete_all_sessions(db: Session, user_id: int) -> None:
+    (
+        db.query(ChatSession)
+        .filter(ChatSession.user_id == user_id)
+        .delete(synchronize_session=False)
+    )
+    db.commit()

@@ -4,6 +4,11 @@ from __future__ import annotations
 import os
 from typing import Any, Callable, TypeVar
 
+from dotenv import load_dotenv
+
+# 🔹 .env 를 여기서 바로 로드 (import 순서 문제 방지)
+load_dotenv()
+
 T = TypeVar("T", bound=Callable[..., Any])
 
 LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY")
@@ -18,6 +23,12 @@ try:
     _client: Client | None = Client(
         api_key=LANGSMITH_API_KEY
     ) if LANGSMITH_API_KEY else None
+
+    # 🔥 여기서 한번 로그 찍어주기
+    if LANGSMITH_API_KEY and _client is not None:
+        print(f"[tracing] LangSmith tracing ENABLED (project={LANGSMITH_PROJECT})")
+    else:
+        print("[tracing] LangSmith API key not set. Tracing DISABLED.")
 
     def get_langsmith_client() -> Client | None:
         """
@@ -45,8 +56,9 @@ try:
         # @traceable 바로 데코레이팅하는 형태
         return _ls_traceable(_func, **kwargs)  # type: ignore[return-value]
 
-except Exception:
+except Exception as e:
     # LangSmith 가 설치되어 있지 않거나, import 에러가 난 경우: no-op 버전
+    print(f"[tracing] LangSmith import error ({e}). Tracing DISABLED.")
 
     def get_langsmith_client() -> None:
         """

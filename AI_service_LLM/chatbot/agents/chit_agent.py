@@ -22,6 +22,7 @@ def run(state: ChatState) -> ChatState:
         context=None,
     )
 
+    # LLM 응답을 메시지 히스토리에 추가
     state["messages"].append(
         {
             "role": "assistant",
@@ -31,4 +32,9 @@ def run(state: ChatState) -> ChatState:
             },
         }
     )
+
+    # 🔥 최종 응답/출처 필드도 채워줌
+    state["answer"] = answer      # 백엔드로 넘길 최종 답변
+    state["sources"] = []         # 잡담 에이전트는 RAG 안 쓰므로 항상 빈 리스트
+
     return state

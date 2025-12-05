@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import json  # 🔥 JSON 직렬화를 위해 추가
 from dataclasses import dataclass
 from typing import List, Literal, Dict, Any, Optional
 
@@ -15,15 +16,32 @@ load_dotenv()
 # 예시: postgresql+psycopg2://user:password@host:port/dbname
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
-    # 로컬/EC2 어디서든 DATABASE_URL 없으면 바로 에러 내고 죽이기
     raise RuntimeError(
-        "DATABASE_URL is not set. "
+        "DATABASE_URL이 설정되지 않았습니다. "
         "AI_service_LLM/.env 또는 Docker 환경변수를 확인하세요."
     )
 
+DEFAULT_USER_ID = int(
+    os.getenv("LLM_DEFAULT_USER_ID")
+    or os.getenv("DEFAULT_USER_ID")
+    or "1"
+)
+
+
+def _resolve_user_id(user_id: int | str | None) -> int:
+    """
+    user_id가 비어 있으면 기본값을, 문자열이면 정수로 변환한다.
+    """
+    if user_id is None:
+        return DEFAULT_USER_ID
+    try:
+        return int(user_id)
+    except Exception as exc:  # pragma: no cover - 안전 방어
+        raise ValueError("user_id를 정수로 변환할 수 없습니다.") from exc
+
 
 def _get_engine() -> Engine:
-    # lazy init로 바꿀 수도 있지만, 여기서는 모듈 import 시 한 번만 생성한다고 가정
+    # lazy init 로 바꿀 수도 있지만, 여기서는 모듈 import 시 한 번만 생성한다고 가정
     return create_engine(DATABASE_URL, future=True)
 
 
@@ -36,9 +54,9 @@ engine: Engine = _get_engine()
 
 @dataclass
 class HistoryRow:
-    id: int
-    query: str
-    answer: str
+    session_id: int
+    role: str
+    content: str
     created_at: str
 
 
@@ -54,10 +72,10 @@ class HistoryMessageRow:
 # =========================================================
 
 def create_session_with_log(
-    user_id: int | str,
+    user_id: int | str | None,
     query: str,
     answer: str,
-    sources: List[str] | None = None,
+    sources: Optional[List[Dict[str, Any]]] = None,
     used_model: str | None = None,
     latency_ms: Optional[int] = None,
 ) -> int:
@@ -65,18 +83,26 @@ def create_session_with_log(
     새로운 채팅 세션을 만들고, 첫 번째 질문/답변을 chat_log에 기록한다.
     반환값: 생성된 session_id
 
-    테이블 스키마 (예상):
+    테이블 스키마:
       chat_session(session_id PK, user_id, title, created_at)
-      chat_log(chat_id PK, session_id, user_id, query, answer, created_at)
+      chat_log(message_id PK, session_id, user_id, role, content, sources, created_at)
+
+    - user 메시지: sources = NULL
+    - assistant 메시지: sources = JSON (List[Dict])
     """
     title = (query or "").strip()
     if not title:
-        title = "새로운 채팅"
+        title = "새 채팅"
     if len(title) > 50:
         title = title[:47] + "..."
 
-    # DB 에는 INTEGER 로 저장
-    user_id_int = int(user_id)
+    user_id_int = _resolve_user_id(user_id)
+
+    # 🔥 sources 를 JSON 문자열로 변환 (없으면 None 그대로)
+    assistant_sources_json = (
+        json.dumps(sources, ensure_ascii=False)
+        if sources is not None else None
+    )
 
     with engine.begin() as conn:
         # 1) chat_session 생성
@@ -93,20 +119,40 @@ def create_session_with_log(
         session_id = res.scalar_one()
 
         # 2) chat_log 에 첫 질문/답변 기록
+        #   - user 메시지 (sources = NULL)
         conn.execute(
             text(
                 """
-                INSERT INTO chat_log (session_id, user_id, query, answer, created_at)
-                VALUES (:session_id, :user_id, :query, :answer, NOW())
+                INSERT INTO chat_log (session_id, user_id, role, content, sources, created_at)
+                VALUES (:session_id, :user_id, :role, :content, :sources, NOW())
                 """
             ),
             {
                 "session_id": session_id,
                 "user_id": user_id_int,
-                "query": query,
-                "answer": answer,
+                "role": "user",
+                "content": query,
+                "sources": None,
             },
         )
+        #   - assistant 메시지 (sources = JSON 문자열)
+        conn.execute(
+            text(
+                """
+                INSERT INTO chat_log (session_id, user_id, role, content, sources, created_at)
+                VALUES (:session_id, :user_id, :role, :content, :sources, NOW())
+                """
+            ),
+            {
+                "session_id": session_id,
+                "user_id": user_id_int,
+                "role": "assistant",
+                "content": answer,
+                "sources": assistant_sources_json,
+            },
+        )
+
+        # TODO: used_model, latency_ms 는 별도 metric 테이블이 있으면 거기에 저장
 
     return int(session_id)
 
@@ -117,48 +163,94 @@ def create_session_with_log(
 
 def append_log(
     session_id: int | str,
-    user_id: int | str,
+    user_id: int | str | None,
     query: str,
     answer: str,
+    sources: Optional[List[Dict[str, Any]]] = None,
 ) -> None:
     """
     기존 session_id에 질문/답변 한 쌍을 chat_log에 추가.
+    (각각 role='user', 'assistant' 로 두 줄 삽입)
+
+    - user 메시지: sources = NULL
+    - assistant 메시지: sources = JSON (List[Dict])
     """
     session_id_int = int(session_id)
-    user_id_int = int(user_id)
+    user_id_int = _resolve_user_id(user_id)
+
+    # 🔥 sources 를 JSON 문자열로 변환
+    assistant_sources_json = (
+        json.dumps(sources, ensure_ascii=False)
+        if sources is not None else None
+    )
 
     with engine.begin() as conn:
+        # user 메시지
         conn.execute(
             text(
                 """
-                INSERT INTO chat_log (session_id, user_id, query, answer, created_at)
-                VALUES (:session_id, :user_id, :query, :answer, NOW())
+                INSERT INTO chat_log (session_id, user_id, role, content, sources, created_at)
+                VALUES (:session_id, :user_id, :role, :content, :sources, NOW())
                 """
             ),
             {
                 "session_id": session_id_int,
                 "user_id": user_id_int,
-                "query": query,
-                "answer": answer,
+                "role": "user",
+                "content": query,
+                "sources": None,
+            },
+        )
+
+        # assistant 메시지
+        conn.execute(
+            text(
+                """
+                INSERT INTO chat_log (session_id, user_id, role, content, sources, created_at)
+                VALUES (:session_id, :user_id, :role, :content, :sources, NOW())
+                """
+            ),
+            {
+                "session_id": session_id_int,
+                "user_id": user_id_int,
+                "role": "assistant",
+                "content": answer,
+                "sources": assistant_sources_json,
             },
         )
 
 
 def upsert_session_with_log(
     session_id: Optional[int],
-    user_id: int | str,
+    user_id: int | str | None,
     query: str,
     answer: str,
+    sources: Optional[List[Dict[str, Any]]] = None,
 ) -> int:
     """
     session_id 가 None 또는 0이면 새로운 세션을 만들고 첫 로그를 기록.
     나머지 경우에는 해당 세션에 로그를 append.
     반환값: 사용된 session_id (새로 생성되었거나, 기존 것이거나)
-    """
-    if not session_id or int(session_id) == 0:
-        return create_session_with_log(user_id=user_id, query=query, answer=answer)
 
-    append_log(session_id=int(session_id), user_id=user_id, query=query, answer=answer)
+    - sources: assistant 메시지 한 턴에 대한 출처 리스트(JSON)
+    """
+    user_id_int = _resolve_user_id(user_id)
+
+    if not session_id or int(session_id) == 0:
+        return create_session_with_log(
+            user_id=user_id_int,
+            query=query,
+            answer=answer,
+            sources=sources,
+        )
+
+    append_log(
+        session_id=int(session_id),
+        user_id=user_id_int,
+        query=query,
+        answer=answer,
+        sources=sources,
+    )
     return int(session_id)
 
 
@@ -167,7 +259,7 @@ def upsert_session_with_log(
 # =========================================================
 
 def list_sessions(
-    user_id: int | str,
+    user_id: int | str | None = None,
     limit: int = 50,
     order: Literal["asc", "desc"] = "desc",
 ) -> List[Dict[str, Any]]:
@@ -176,7 +268,7 @@ def list_sessions(
     /chatbot/sessions 에서 사용하기 좋은 형태.
     """
     order_sql = "ASC" if order == "asc" else "DESC"
-    user_id_int = int(user_id)
+    user_id_int = _resolve_user_id(user_id)
 
     sql = f"""
         SELECT
@@ -198,17 +290,11 @@ def list_sessions(
 
     sessions: List[Dict[str, Any]] = []
     for row in rows:
-        created_at = row["created_at"]
-        created_at_str = (
-            created_at.isoformat()
-            if hasattr(created_at, "isoformat")
-            else str(created_at)
-        )
         sessions.append(
             {
                 "session_id": row["session_id"],
                 "title": row["title"],
-                "created_at": created_at_str,
+                "created_at": row["created_at"],  # datetime 그대로
             }
         )
 
@@ -224,23 +310,23 @@ def get_session_messages(
     user_id: Optional[int | str] = None,
 ) -> Optional[List[Dict[str, Any]]]:
     """
-    특정 session_id의 전체 대화 내역을 "role + content + created_at" 형태로 반환.
+    특정 session_id의 전체 대화 내역을
+    "role + content + created_at + sources" 형태로 반환.
+    (메인 백엔드와 맞추기 위해 sources 도 포함)
     """
-    sql = """
-        SELECT query, answer, created_at, user_id
+    base_sql = """
+        SELECT role, content, created_at, user_id, sources
         FROM chat_log
         WHERE session_id = :session_id
         {user_filter}
-        ORDER BY created_at ASC
+        ORDER BY created_at ASC, message_id ASC
     """
 
-    user_filter = ""
     params: Dict[str, Any] = {"session_id": int(session_id)}
-    if user_id is not None:
-        user_filter = "AND user_id = :user_id"
-        params["user_id"] = int(user_id)
+    user_filter = "AND user_id = :user_id"
+    params["user_id"] = _resolve_user_id(user_id)
 
-    sql = sql.format(user_filter=user_filter)
+    sql = base_sql.format(user_filter=user_filter)
 
     with engine.begin() as conn:
         rows = conn.execute(text(sql), params).mappings().all()
@@ -250,26 +336,12 @@ def get_session_messages(
 
     messages: List[Dict[str, Any]] = []
     for row in rows:
-        created_at = row["created_at"]
-        created_at_str = (
-            created_at.isoformat()
-            if hasattr(created_at, "isoformat")
-            else str(created_at)
-        )
-        # user 메시지
         messages.append(
             {
-                "role": "user",
-                "content": row["query"],
-                "created_at": created_at_str,
-            }
-        )
-        # assistant 메시지
-        messages.append(
-            {
-                "role": "assistant",
-                "content": row["answer"],
-                "created_at": created_at_str,
+                "role": row["role"],
+                "content": row["content"],
+                "created_at": row["created_at"],   # datetime
+                "sources": row.get("sources"),     # JSON → list/dict 로 자동 로드됨
             }
         )
 
@@ -288,22 +360,18 @@ def delete_session(session_id: int | str, user_id: Optional[int | str] = None) -
     session_id_int = int(session_id)
 
     with engine.begin() as conn:
-        # 1) chat_log 삭제
-        params: Dict[str, Any] = {"session_id": session_id_int}
-        user_filter = ""
-        if user_id is not None:
-            user_filter = "AND user_id = :user_id"
-            params["user_id"] = int(user_id)
+        target_user_id = _resolve_user_id(user_id)
 
+        # 1) chat_log 삭제
         conn.execute(
             text(
-                f"""
+                """
                 DELETE FROM chat_log
                 WHERE session_id = :session_id
-                {user_filter}
+                  AND user_id = :user_id
                 """
             ),
-            params,
+            {"session_id": session_id_int, "user_id": target_user_id},
         )
 
         # 2) chat_session 삭제
@@ -312,38 +380,42 @@ def delete_session(session_id: int | str, user_id: Optional[int | str] = None) -
                 """
                 DELETE FROM chat_session
                 WHERE session_id = :session_id
+                  AND user_id = :user_id
                 """
             ),
-            {"session_id": session_id_int},
+            {"session_id": session_id_int, "user_id": target_user_id},
         )
         deleted = res.rowcount or 0
 
     return deleted > 0
 
 
-def delete_all_sessions(user_id: Optional[int | str] = None) -> None:
+def delete_all_sessions(
+    user_id: Optional[int | str] = None,
+    include_all: bool = False,
+) -> None:
     """
     전체 세션 삭제 (개발/테스트용).
-    user_id가 주어지면 해당 유저의 세션과 로그만 삭제.
-    아무것도 주어지지 않으면 전체 삭제.
+    - user_id가 주어지면 해당 유저의 세션과 로그만 삭제
+    - include_all=True 이고 user_id가 없으면 모든 세션/로그 삭제
+    - 아무것도 없으면 기본 사용자(DEFAULT_USER_ID) 데이터만 삭제
     """
     with engine.begin() as conn:
-        if user_id is not None:
-            user_id_int = int(user_id)
-            # 특정 유저 로그 삭제
-            conn.execute(
-                text("DELETE FROM chat_log WHERE user_id = :user_id"),
-                {"user_id": user_id_int},
-            )
-            conn.execute(
-                text("DELETE FROM chat_session WHERE user_id = :user_id"),
-                {"user_id": user_id_int},
-            )
-        else:
-            # 전체 삭제
+        if include_all and user_id is None:
             conn.execute(
                 text("TRUNCATE chat_log, chat_session RESTART IDENTITY CASCADE")
             )
+            return
+
+        target_user_id = _resolve_user_id(user_id)
+        conn.execute(
+            text("DELETE FROM chat_log WHERE user_id = :user_id"),
+            {"user_id": target_user_id},
+        )
+        conn.execute(
+            text("DELETE FROM chat_session WHERE user_id = :user_id"),
+            {"user_id": target_user_id},
+        )
 
 
 # =========================================================
@@ -355,25 +427,37 @@ def list_history(
     order: Literal["asc", "desc"] = "desc",
 ) -> List[Dict[str, Any]]:
     """
-    🔹 기존 버전: 전체 세션의 히스토리 목록을 조회.
-    (user_id 구분 없이 전부)
+    🔹 전체 세션의 히스토리 목록을 조회.
+    한 세션당
+      - 첫 user 메시지를 query
+      - 첫 assistant 메시지를 answer
+    로 묶어서 반환 (기존 인터페이스 유지용).
     """
     order_sql = "ASC" if order == "asc" else "DESC"
 
     sql = f"""
         SELECT
             s.session_id AS id,
-            l.query,
-            l.answer,
+            u.content AS query,
+            a.content AS answer,
             s.created_at
         FROM chat_session AS s
-        JOIN LATERAL (
-            SELECT query, answer
+        LEFT JOIN LATERAL (
+            SELECT content
             FROM chat_log
             WHERE chat_log.session_id = s.session_id
-            ORDER BY created_at ASC
+              AND role = 'user'
+            ORDER BY created_at ASC, message_id ASC
             LIMIT 1
-        ) AS l ON TRUE
+        ) AS u ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT content
+            FROM chat_log
+            WHERE chat_log.session_id = s.session_id
+              AND role = 'assistant'
+            ORDER BY created_at ASC, message_id ASC
+            LIMIT 1
+        ) AS a ON TRUE
         ORDER BY s.created_at {order_sql}
         LIMIT :limit
     """
@@ -386,14 +470,15 @@ def list_history(
 
 def get_history_detail(session_id: str | int) -> Optional[List[Dict[str, Any]]]:
     """
-    🔹 기존 버전: 특정 session_id에 대한 상세 대화 내역 조회.
+    🔹 특정 session_id에 대한 상세 대화 내역 조회.
     timestamp 필드 이름으로 반환.
+    (chat_log 의 role / content 를 그대로 사용)
     """
     sql = """
-        SELECT query, answer, created_at
+        SELECT role, content, created_at
         FROM chat_log
         WHERE session_id = :session_id
-        ORDER BY created_at ASC
+        ORDER BY created_at ASC, message_id ASC
     """
 
     with engine.begin() as conn:
@@ -411,15 +496,20 @@ def get_history_detail(session_id: str | int) -> Optional[List[Dict[str, Any]]]:
             if hasattr(row["created_at"], "isoformat")
             else str(row["created_at"])
         )
-        messages.append({"role": "user", "content": row["query"], "timestamp": ts})
-        messages.append({"role": "assistant", "content": row["answer"], "timestamp": ts})
+        messages.append(
+            {
+                "role": row["role"],
+                "content": row["content"],
+                "timestamp": ts,
+            }
+        )
 
     return messages
 
 
 def delete_all_history() -> None:
     """
-    🔹 기존 버전: 모든 히스토리 삭제 (user_id 구분 없음).
+    🔹 모든 히스토리 삭제 (user_id 구분 없음).
     """
     with engine.begin() as conn:
         conn.execute(text("TRUNCATE chat_log, chat_session RESTART IDENTITY CASCADE"))
@@ -427,7 +517,7 @@ def delete_all_history() -> None:
 
 def delete_history_one(session_id: str | int) -> bool:
     """
-    🔹 기존 버전: 특정 session_id에 대한 히스토리 삭제.
+    🔹 특정 session_id에 대한 히스토리 삭제.
     """
     session_id_int = int(session_id)
     with engine.begin() as conn:
@@ -444,22 +534,26 @@ def delete_history_one(session_id: str | int) -> bool:
     return deleted > 0
 
 
-def get_recent_logs(user_id: int | str, limit: int = 20) -> List[Dict[str, Any]]:
+def get_recent_logs(
+    user_id: int | str | None = None,
+    limit: int = 20,
+) -> List[Dict[str, Any]]:
     """
     특정 user_id의 최근 chat_log들을 가져온다.
-    history_agent에서 과거 대화 기반 답변을 만들 때 사용.
+    (이제는 한 줄 = 한 메시지 구조이므로
+     session_id, role, content, created_at 을 그대로 반환)
     """
-    user_id_int = int(user_id)
+    user_id_int = _resolve_user_id(user_id)
 
     sql = """
         SELECT
             session_id,
-            query,
-            answer,
+            role,
+            content,
             created_at
         FROM chat_log
         WHERE user_id = :user_id
-        ORDER BY created_at DESC
+        ORDER BY created_at DESC, message_id DESC
         LIMIT :limit
     """
 

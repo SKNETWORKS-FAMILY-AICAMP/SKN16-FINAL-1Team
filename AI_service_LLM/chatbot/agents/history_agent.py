@@ -26,16 +26,6 @@ def run(state: ChatState) -> ChatState:
 
     # 1) 최근 대화 기록 N개 조회
     logs: List[Dict] = get_recent_logs(user_id=user_id, limit=20)
-    # ChatRepository 기준:
-    #   [
-    #     {
-    #       "session_id": 1,
-    #       "query": "...",
-    #       "answer": "...",
-    #       "created_at": datetime 또는 str,
-    #     },
-    #     ...
-    #   ]
 
     if not logs:
         # 과거 기록이 없으면 그대로 안내
@@ -43,36 +33,51 @@ def run(state: ChatState) -> ChatState:
             "현재 저장된 이전 대화 기록이 없어서, 과거 대화를 참고할 수 없습니다. "
             "질문을 다시 구체적으로 말씀해 주시면, 새로운 질문으로 답변해 드릴게요."
         )
-    else:
-        # 2) context 문자열로 변환 (dict 기반 안전 접근)
-        history_lines: List[str] = []
-        for log in logs:
-            created_at = log.get("created_at", "")
-            # datetime 객체일 수도 있으니 문자열로 캐스팅
-            if hasattr(created_at, "isoformat"):
-                created_at_str = created_at.isoformat()
-            else:
-                created_at_str = str(created_at)
 
-            session_id = log.get("session_id", "")
-            query = log.get("query", "")
-            answer_text = log.get("answer", "")
+        # 🔥 state 값 채우기
+        state["answer"] = answer
+        state["sources"] = []  # history agent는 출처가 없다
 
-            history_lines.append(
-                f"[세션 {session_id} | {created_at_str}]\n"
-                f"user: {query}\n"
-                f"assistant: {answer_text}"
-            )
+        # state.messages append
+        state["messages"].append(
+            {
+                "role": "assistant",
+                "content": answer,
+                "meta": {"agent": "history_agent", "log_count": 0},
+            }
+        )
+        return state
 
-        history_context = "\n\n".join(history_lines)
+    # 2) context 문자열로 변환
+    history_lines: List[str] = []
+    for log in logs:
+        created_at = log.get("created_at", "")
+        # datetime 객체일 수도 있으니 문자열로 캐스팅
+        if hasattr(created_at, "isoformat"):
+            created_at_str = created_at.isoformat()
+        else:
+            created_at_str = str(created_at)
 
-        # 3) LLM 호출 (시스템 프롬프트 + 과거 기록 컨텍스트 제공)
-        answer = call_llm(
-            system_prompt=HISTORY_SYSTEM_PROMPT,
-            user_message=user_message,
-            context=history_context,
+        session_id = log.get("session_id", "")
+        role = log.get("role", "user")
+        content = log.get("content", "")
+
+        # 각 메시지를 한 줄씩 기록
+        history_lines.append(
+            f"[세션 {session_id} | {created_at_str} | {role}]\n"
+            f"{role}: {content}"
         )
 
+    history_context = "\n\n".join(history_lines)
+
+    # 3) LLM 호출 (시스템 프롬프트 + 과거 기록 컨텍스트 제공)
+    answer = call_llm(
+        system_prompt=HISTORY_SYSTEM_PROMPT,
+        user_message=user_message,
+        context=history_context,
+    )
+
+    # 4) state.messages append
     state["messages"].append(
         {
             "role": "assistant",
@@ -83,4 +88,9 @@ def run(state: ChatState) -> ChatState:
             },
         }
     )
+
+    # 🔥 최종 반환용 필드
+    state["answer"] = answer
+    state["sources"] = []  # history agent는 외부 문서 RAG가 아니므로 항상 빈 리스트
+
     return state

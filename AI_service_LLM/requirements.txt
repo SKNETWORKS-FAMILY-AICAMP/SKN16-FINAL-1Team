@@ -7,6 +7,7 @@ openai>=1.0.0
 chromadb
 tavily-python
 langsmith
+cohere          # 🔹 이 줄 추가
 
 # DB
 sqlalchemy

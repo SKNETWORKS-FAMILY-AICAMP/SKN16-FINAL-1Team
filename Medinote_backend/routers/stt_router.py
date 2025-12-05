@@ -25,7 +25,7 @@ router = APIRouter(prefix="/stt", tags=["STT"])
 FAKE_USER_ID = 1
 
 # STT 서버 URL (Docker: stt, 로컬: localhost:8002)
-STT_SERVER_URL = os.getenv("STT_SERVER_URL", "http://stt:8002")
+STT_SERVER_URL = os.getenv("STT_SERVER_URL", "http://localhost:8002")
 
 
 # ------------------------------------------------------------

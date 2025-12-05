@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from typing import List, Dict
+import os
+from typing import List, Optional
+from datetime import datetime
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-
-# 🔹 OpenAI LLM (chatbot/core/llm.py)
-from chatbot.core.llm import run_llm
+from dotenv import load_dotenv
 
 # 🔹 DB 저장/조회용 레포지토리
 from chatbot.core.chat_repository import (
@@ -20,12 +20,31 @@ from chatbot.core.chat_repository import (
     delete_all_sessions as db_delete_all_sessions,
 )
 
+# 🔹 ChatState & Supervisor(오케스트레이터)
+from chatbot.core.state import ChatState
+from chatbot.core.supervisor import run_orchestrator
+
+load_dotenv()
+
 # ============================================
 # 공통 설정
 # ============================================
 
-# ⚠️ 아직 인증 연동 전이라 테스트용으로 user_id=1 고정
-USER_ID = 1
+# ⚠️ 인증 연동 전이므로 기본 사용자 ID를 환경변수로 받고, 없으면 1을 사용
+DEFAULT_USER_ID = int(
+    os.getenv("LLM_DEFAULT_USER_ID")
+    or os.getenv("DEFAULT_USER_ID")
+    or "1"
+)
+
+
+def _default_user_id(user_id: int | None = None) -> int:
+    """
+    - 인자가 있으면 그대로 사용
+    - 없으면 DEFAULT_USER_ID 사용
+    """
+    return user_id if user_id is not None else DEFAULT_USER_ID
+
 
 MEDINOTE_SYSTEM_PROMPT = """
 너는 '메디노트' 서비스의 AI 건강 챗봇이다.
@@ -36,23 +55,45 @@ MEDINOTE_SYSTEM_PROMPT = """
 """
 
 # ============================================
-# Pydantic 모델들 (프론트와 1:1 매핑)
+# Pydantic 모델들 (프론트/백엔드와 1:1 매핑)
 # ============================================
 
+
+class ChatSource(BaseModel):
+    """
+    LangGraph 에이전트가 생성한 '출처' 정보.
+    - disease / drug: Chroma 문서
+    - web: Tavily 웹 검색 결과
+    """
+    id: str
+    collection: str                    # disease / drug / web ...
+    title: Optional[str] = None
+    url: Optional[str] = None
+    score: Optional[float] = None
+
+
 class ChatQueryRequest(BaseModel):
+    """
+    POST /chatbot/query 요청 바디
+    - session_id: 0 이면 새 세션, 그 외에는 기존 세션 이어쓰기
+    - query: 사용자 질문
+    """
     session_id: int       # 0이면 새 세션
-    query: str
+    query: str            # 사용자 질문 텍스트
+    # 🔥 user_id 는 이제 바디에서 받지 않고 서버 내부에서 기본값 사용
 
 
 class ChatQueryResponse(BaseModel):
     session_id: int
     answer: str
+    # 🔥 이번 턴에서 사용된 출처 리스트
+    sources: List[ChatSource] = []
 
 
 class SessionItem(BaseModel):
     session_id: int
     title: str
-    created_at: str       # ISO 문자열
+    created_at: datetime   # Swagger example: "2025-12-05T09:35:20.871Z"
 
 
 class SessionsResponse(BaseModel):
@@ -60,9 +101,11 @@ class SessionsResponse(BaseModel):
 
 
 class SessionMessage(BaseModel):
-    role: str             # "user" | "assistant"
+    role: str              # "user" | "assistant"
     content: str
-    created_at: str       # ISO 문자열
+    created_at: datetime   # Swagger example: ISO8601 datetime
+    # 🔥 메인 백엔드와 맞추기 위해 optional sources 추가
+    sources: Optional[List[ChatSource]] = None
 
 
 class SessionDetailResponse(BaseModel):
@@ -79,6 +122,7 @@ app = FastAPI(title="MediNote AI LLM Service", version="0.2.0")
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://192.168.0.10:5173",
     "http://192.168.0.11:5173",
 ]
 
@@ -92,10 +136,13 @@ app.add_middleware(
 
 
 # ============================================
-# DB 기반 컨텍스트 빌더
+# (옵션) DB 기반 컨텍스트 빌더
 # ============================================
 
-def _build_context_from_db(session_id: int) -> str | None:
+def _build_context_from_db(
+    session_id: int,
+    user_id: int | None = None,
+) -> str | None:
     """
     DB에서 해당 세션의 대화 내역을 가져와서
     LLM에 넘길 context 문자열로 변환.
@@ -104,11 +151,13 @@ def _build_context_from_db(session_id: int) -> str | None:
     if not session_id or session_id == 0:
         return None
 
-    rows = db_get_session_messages(session_id=session_id, user_id=USER_ID)
+    rows = db_get_session_messages(
+        session_id=session_id,
+        user_id=_default_user_id(user_id),
+    )
     if not rows:
         return None
 
-    # rows 예: [{"role":"user","content":"...","created_at":"..."}, ...]
     last_msgs = rows[-10:]
 
     lines: List[str] = []
@@ -117,22 +166,6 @@ def _build_context_from_db(session_id: int) -> str | None:
         lines.append(f"[{prefix}] {m['content']}")
 
     return "\n".join(lines)
-
-
-def generate_answer_with_db(session_id: int, query: str) -> str:
-    """
-    DB에 저장된 세션 기반으로 context를 만들고,
-    LLM(run_llm)을 호출해서 답변을 생성.
-    """
-    context = _build_context_from_db(session_id)
-
-    answer = run_llm(
-        system_prompt=MEDINOTE_SYSTEM_PROMPT,
-        user_message=query,
-        context=context,
-    )
-
-    return answer or "죄송합니다. 지금은 답변을 생성하지 못했습니다."
 
 
 # ============================================
@@ -145,40 +178,92 @@ async def health_check():
 
 
 # ============================================
-# POST /chatbot/query  (⭢ DB 저장 버전)
+# POST /chatbot/query  (⭢ LangGraph + DB 저장)
 # ============================================
 
 @app.post("/chatbot/query", response_model=ChatQueryResponse, tags=["chatbot"])
 async def post_chatbot_query(payload: ChatQueryRequest):
     """
-    - payload.session_id == 0 or 존재하지 않으면 ➜ 새 세션 생성 + 첫 로그 저장
-    - 아니면 ➜ 기존 세션에 로그 append
+    - payload.session_id == 0 또는 세션 없음 → 새 세션 생성 + 첫 로그 저장
+    - payload.session_id != 0              → 해당 세션에 로그 append
+
+    흐름:
+      1) ChatState 구성 (user_id / session_id / messages)
+      2) run_orchestrator(state) 실행 → 여러 에이전트 조합
+      3) result 에서 answer / sources 추출
+      4) upsert_session_with_log(...) 로 세션/로그 저장
+      5) session_id + answer + sources 반환
     """
-    # 1) LLM 답변 먼저 생성 (기존 세션 대화 내용으로 context 구성)
+    # 🔥 이제 body 에서 user_id 안 받고, 서버 내부 기본값 사용
+    user_id = _default_user_id()
+
+    # 1) ChatState 구성
+    state: ChatState = {
+        "user_id": str(user_id),
+        "messages": [
+            {
+                "role": "user",
+                "content": payload.query,
+                "meta": {},
+            }
+        ],
+    }
+
+    # 기존 세션이면 state에 힌트로 넣어준다.
+    if payload.session_id:
+        state["session_id"] = str(payload.session_id)
+
+    # 2) 오케스트레이터 실행
     try:
-        answer_text = generate_answer_with_db(
-            session_id=payload.session_id,
-            query=payload.query,
-        )
+        new_state = run_orchestrator(state)
     except Exception as e:
         print(f"[LLM ERROR] session_id={payload.session_id} error={e!r}")
-        answer_text = (
-            "죄송합니다. 현재 챗봇 엔진에 문제가 발생하여 답변을 생성할 수 없습니다. "
-            "잠시 후 다시 시도해 주세요."
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "현재 챗봇 엔진에 문제가 발생하여 답변을 생성할 수 없습니다. "
+                "잠시 후 다시 시도해 주세요."
+            ),
         )
 
-    # 2) DB 에 세션 + 로그 저장 (필요하면 새 세션 생성)
+    # 3) answer / sources 추출
+    answer_text: str = new_state.get("answer") or ""
+
+    # safety: answer 가 비어 있으면 마지막 assistant 메시지에서 fallback
+    if not answer_text:
+        msgs = new_state.get("messages") or []
+        if msgs and msgs[-1].get("role") == "assistant":
+            answer_text = msgs[-1].get("content", "")
+
+    if not answer_text:
+        answer_text = (
+            "죄송합니다. 현재는 적절한 답변을 생성하지 못했습니다. "
+            "질문을 조금 더 구체적으로 말씀해 주시면 도움이 됩니다."
+        )
+
+    sources_raw = new_state.get("sources") or []
+    sources: List[ChatSource] = [
+        ChatSource(**s) for s in sources_raw
+        if isinstance(s, dict)
+    ] if sources_raw else []
+
+    # DB에 저장할 수 있도록 순수 dict 리스트로 변환
+    sources_for_db = [s.dict() for s in sources] if sources else None
+
+    # 4) DB 에 세션 + 로그 저장
     used_session_id = upsert_session_with_log(
         session_id=payload.session_id,
-        user_id=USER_ID,
+        user_id=user_id,
         query=payload.query,
         answer=answer_text,
+        sources=sources_for_db,
     )
 
-    # 3) 프론트로 session_id + answer 반환
+    # 5) 프론트/백엔드로 session_id + answer + sources 반환
     return ChatQueryResponse(
         session_id=used_session_id,
         answer=answer_text,
+        sources=sources,
     )
 
 
@@ -188,10 +273,20 @@ async def post_chatbot_query(payload: ChatQueryRequest):
 
 @app.get("/chatbot/sessions", response_model=SessionsResponse, tags=["chatbot"])
 async def get_chatbot_sessions():
-    rows = db_list_sessions(user_id=USER_ID, limit=50, order="desc")
-    # rows 예: [{"session_id":1,"title":"...","created_at":"..."}]
-    sessions = [SessionItem(**row) for row in rows]
-    return SessionsResponse(sessions=sessions)
+    """
+    세션 목록 조회.
+    DB 에러가 나도 서비스 전체가 죽지 않도록 try/except 로 감싸고,
+    실패 시에는 빈 배열을 반환한다.
+    """
+    try:
+        target_user_id = _default_user_id()
+        rows = db_list_sessions(user_id=target_user_id, limit=50, order="desc")
+        # rows 예: [{"session_id":1,"title":"...","created_at":"2025-12-05T09:35:20.871Z"}, ...]
+        sessions = [SessionItem(**row) for row in rows]
+        return SessionsResponse(sessions=sessions)
+    except Exception as e:
+        print(f"[SESSIONS ERROR] user_id={_default_user_id()} error={e!r}")
+        return SessionsResponse(sessions=[])
 
 
 # ============================================
@@ -200,8 +295,8 @@ async def get_chatbot_sessions():
 
 @app.delete("/chatbot/sessions", response_model=str, tags=["chatbot"])
 async def delete_all_chatbot_sessions():
-    db_delete_all_sessions(user_id=USER_ID)
-    return "All chatbot sessions deleted."
+    db_delete_all_sessions(user_id=_default_user_id())
+    return "모든 챗봇 세션을 삭제했습니다."
 
 
 # ============================================
@@ -214,11 +309,27 @@ async def delete_all_chatbot_sessions():
     tags=["chatbot"],
 )
 async def get_chatbot_session_detail(session_id: int):
-    rows = db_get_session_messages(session_id=session_id, user_id=USER_ID)
-    if not rows:
-        raise HTTPException(status_code=404, detail="Session not found.")
+    """
+    특정 세션의 전체 메시지 조회.
+    에러 시 404/500 대신 깔끔한 메시지로 정리.
+    """
+    try:
+        target_user_id = _default_user_id()
+        rows = db_get_session_messages(
+            session_id=session_id,
+            user_id=target_user_id,
+        )
+    except Exception as e:
+        print(f"[SESSION DETAIL ERROR] session_id={session_id} error={e!r}")
+        raise HTTPException(status_code=500, detail="세션 정보를 불러오지 못했습니다.")
 
+    if not rows:
+        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
+
+    # rows 안에 created_at 은 ISO 문자열 / datetime 둘 다 허용
+    # sources 컬럼이 없으면 Pydantic 이 기본값(None) 채움
     messages = [SessionMessage(**row) for row in rows]
+
     return SessionDetailResponse(
         session_id=session_id,
         messages=messages,
@@ -235,8 +346,11 @@ async def get_chatbot_session_detail(session_id: int):
     tags=["chatbot"],
 )
 async def delete_one_chatbot_session(session_id: int):
-    deleted = db_delete_session(session_id=session_id, user_id=USER_ID)
+    deleted = db_delete_session(
+        session_id=session_id,
+        user_id=_default_user_id(),
+    )
     if not deleted:
-        raise HTTPException(status_code=404, detail="Session not found.")
+        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
 
-    return f"Session {session_id} deleted."
+    return f"{session_id}번 세션을 삭제했습니다."
