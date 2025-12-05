@@ -1,0 +1,20 @@
+# FastAPI 서버
+fastapi>=0.100.0
+uvicorn>=0.23.0
+python-multipart
+
+# OpenAI API
+openai>=1.0.0
+
+# HTTP 클라이언트
+httpx>=0.24.0
+
+# 오디오 처리
+pydub>=0.25.0
+
+# 환경변수
+python-dotenv>=1.0.0
+
+# DB (crud.py에서 사용)
+sqlalchemy
+psycopg2-binary
