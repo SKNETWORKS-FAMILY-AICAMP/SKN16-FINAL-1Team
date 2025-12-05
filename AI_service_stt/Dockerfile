@@ -5,8 +5,9 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # ffmpeg 설치 (pydub 오디오 변환용)
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # requirements.txt 복사 및 설치
