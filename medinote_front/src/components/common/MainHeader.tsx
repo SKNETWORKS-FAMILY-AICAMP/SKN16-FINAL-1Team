@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { HiOutlineMenu, HiOutlineBell, HiOutlineQuestionMarkCircle, HiOutlineCog } from 'react-icons/hi';
+import { HiOutlineMenu, HiOutlineBell /*, HiOutlineQuestionMarkCircle, HiOutlineCog */ } from 'react-icons/hi';
 import { FaHeart } from 'react-icons/fa';
 import ProfileDropdown from './ProfileDropdown';
 import useUserStore from '../../store/useUserStore';
@@ -31,9 +31,24 @@ type HeaderProps = {
 export default function MainHeader({ onMenuClick }: HeaderProps) {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const userAvatar = useUserStore((s) => s.userAvatar);
+  const profileRef = useRef<HTMLDivElement>(null);
 
   // 알림 드롭다운 상태
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+
+  // 프로필 드롭다운 바깥 클릭 시 닫기
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setIsProfileOpen(false);
+      }
+    };
+
+    if (isProfileOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isProfileOpen]);
   // 알림 데이터 상태
   const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
   
@@ -73,7 +88,7 @@ export default function MainHeader({ onMenuClick }: HeaderProps) {
       <header className="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-lg h-16 bg-white shadow-md z-50 flex items-center justify-between px-4">
         {/* Left: Menu + Logo */}
         <div className="flex items-center gap-2">
-          <button onClick={onMenuClick} className="text-dark-gray text-2xl" aria-label="Open menu">
+          <button onClick={onMenuClick} className="text-dark-gray text-2xl hover:text-mint" aria-label="Open menu">
             <HiOutlineMenu />
           </button>
           <Link to="/dashboard" className="flex items-center gap-1 text-mint" aria-label="Go to dashboard">
@@ -97,24 +112,16 @@ export default function MainHeader({ onMenuClick }: HeaderProps) {
             )}
           </button>
           
-          <button className="text-dark-gray text-2xl" aria-label="Help">
+          {/* <button className="text-dark-gray text-2xl" aria-label="Help">
             <HiOutlineQuestionMarkCircle />
           </button>
           <Link to="/settings" className="text-dark-gray text-2xl" aria-label="Settings">
             <HiOutlineCog />
-          </Link>
-
-          {/* Profile button */}
-          <button
-            onClick={toggleProfile}
-            className="w-8 h-8 bg-mint rounded-full flex items-center justify-center text-white font-bold"
-          >
-            {userAvatar || '?'}
-          </button>
+          </Link> */}
 
           {/* 알림 드롭다운 */}
           {isNotificationOpen && (
-            <NotificationDropdown 
+            <NotificationDropdown
               notifications={notifications}
               onClose={() => setIsNotificationOpen(false)}
               onMarkAsRead={handleMarkAsRead}
@@ -123,7 +130,16 @@ export default function MainHeader({ onMenuClick }: HeaderProps) {
             />
           )}
 
-          {isProfileOpen && <ProfileDropdown />}
+          {/* Profile button + dropdown */}
+          <div ref={profileRef} className="relative">
+            <button
+              onClick={toggleProfile}
+              className="w-8 h-8 bg-mint rounded-full flex items-center justify-center text-white font-bold"
+            >
+              {userAvatar || '?'}
+            </button>
+            {isProfileOpen && <ProfileDropdown onClose={() => setIsProfileOpen(false)} />}
+          </div>
         </div>
       </header>
     </>

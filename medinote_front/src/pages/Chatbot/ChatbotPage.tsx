@@ -392,9 +392,15 @@ function ChatWindow({ chat, onSend }: ChatWindowProps) {
   const [message, setMessage] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const [isSending, setIsSending] = useState(false);
 
   const messages = chat?.messages || [];
+
+  // 메시지가 추가되면 맨 아래로 스크롤
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   const send = async () => {
     if (!message.trim() || isSending || !chat) return;
@@ -430,6 +436,8 @@ function ChatWindow({ chat, onSend }: ChatWindowProps) {
             />
           ))
         )}
+        {/* 스크롤 타겟 */}
+        <div ref={messagesEndRef} />
       </div>
 
       {attachments.length > 0 ? (

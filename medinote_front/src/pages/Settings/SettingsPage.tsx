@@ -7,9 +7,12 @@ import useUserStore from '../../store/useUserStore';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 
+type InfoModalType = 'help' | 'privacy' | 'terms' | null;
+
 export default function SettingsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [infoModalType, setInfoModalType] = useState<InfoModalType>(null);
   const { userName, userPassword, userAvatar, logout } = useUserStore();
   const navigate = useNavigate();
 
@@ -33,17 +36,16 @@ export default function SettingsPage() {
           <h2 className="text-xl font-bold text-dark-gray">설정</h2>
         </header>
 
-        {/* 2단 레이아웃 */}
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* 세로 레이아웃 */}
+        <section className="flex flex-col gap-6">
 
-          {/* 왼쪽: 프로필 수정 카드 */}
-          <div className="md:col-span-1">
+          {/* 프로필 수정 카드 */}
+          <div>
             <div className="w-full bg-white rounded-lg shadow-lg p-6 text-center">
               <div className="w-24 h-24 bg-mint rounded-full flex items-center justify-center text-white font-bold text-4xl mb-4 mx-auto">
                 {userAvatar || '?'}
               </div>
-              <h3 className="text-xl font-bold text-dark-gray">{userName || '홍길동님'}</h3>
-              <p className="text-sm text-gray-500 mb-6 break-all">{userPassword || '로그아웃'}</p>
+              <h3 className="text-xl font-bold text-dark-gray mb-6">{userName || '홍길동님'}</h3>
               
               <button
                 onClick={() => setIsModalOpen(true)}
@@ -54,19 +56,19 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* 오른쪽: 리스트메뉴 */}
-          <div className="md:col-span-2 space-y-4">
+          {/* 리스트메뉴 */}
+          <div className="space-y-4">
             <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-              <ListItem icon={<HiOutlineQuestionMarkCircle />} title="도움말 & 지원" />
-              <ListItem icon={<HiOutlineShieldCheck />} title="개인정보 처리방침" />
-              <ListItem icon={<HiOutlineDocumentText />} title="서비스 이용약관" />
+              <ListItem icon={<HiOutlineQuestionMarkCircle />} title="도움말 & 지원" onClick={() => setInfoModalType('help')} />
+              <ListItem icon={<HiOutlineShieldCheck />} title="개인정보 처리방침" onClick={() => setInfoModalType('privacy')} />
+              <ListItem icon={<HiOutlineDocumentText />} title="서비스 이용약관" onClick={() => setInfoModalType('terms')} />
             </div>
             
             {/* 하단 */}
             <div className="space-y-3 pt-4">
               <button
                 onClick={handleLogout}
-                className="w-full flex items-center gap-3 p-4 bg-white rounded-lg shadow-lg text-dark-gray hover:bg-gray-50 font-semibold"
+                className="w-full flex items-center gap-3 p-4 bg-white rounded-lg shadow-lg text-dark-gray hover:bg-gray-100 font-semibold"
               >
                 <HiOutlineLogout className="text-xl" />
                 로그아웃
@@ -98,6 +100,14 @@ export default function SettingsPage() {
           onConfirm={handleDeleteAccount}
         />
       )}
+
+      {/* 정보 모달 */}
+      {infoModalType && (
+        <InfoModal
+          type={infoModalType}
+          onClose={() => setInfoModalType(null)}
+        />
+      )}
     </>
   );
 }
@@ -108,11 +118,12 @@ type ItemProps = {
   icon: React.ReactNode;
   title: string;
   description?: string;
+  onClick?: () => void;
 };
 
-function ListItem({ icon, title, description }: ItemProps) {
+function ListItem({ icon, title, description, onClick }: ItemProps) {
   return (
-    <button className="w-full flex items-center justify-between p-4 border-t border-gray-100 hover:bg-gray-50">
+    <button onClick={onClick} className="w-full flex items-center justify-between p-4 border-t border-gray-100 hover:bg-gray-100">
       <div className="flex items-center gap-4">
         <div className="text-mint text-2xl">{icon}</div>
         <div>
@@ -183,6 +194,112 @@ function DeleteAccountModal({
             className="w-full py-2 rounded-lg text-gray-500 hover:text-dark-gray font-semibold"
           >
             취소
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- 정보 모달 (도움말, 개인정보, 이용약관) ---
+const INFO_CONTENT: Record<'help' | 'privacy' | 'terms', { title: string; content: string }> = {
+  help: {
+    title: '도움말 & 지원',
+    content: `메디노트 서비스 이용 안내
+
+■ 주요 기능
+• 건강 프로필: 기본 건강 정보, 질환, 복용 약물, 알러지 정보를 등록하고 관리할 수 있습니다.
+• 진료 기록: 병원 방문 기록과 처방 내역을 저장하고 확인할 수 있습니다.
+• AI 건강 상담: 건강 관련 질문에 AI가 답변을 제공합니다.
+• 데이터 내보내기: PDF 형식으로 건강 기록을 내보낼 수 있습니다.
+
+■ 문의 및 지원
+서비스 이용 중 문의사항이 있으시면 앱 내 피드백 기능을 이용해 주시기 바랍니다.
+
+■ 중요 안내
+본 서비스에서 제공하는 AI 기반 답변은 사용자의 편의를 위한 참고 자료입니다. 건강상 이상이 의심되는 경우, 반드시 전문 의료기관을 방문하여 의료 전문가와 상담하시기 바랍니다.`,
+  },
+  privacy: {
+    title: '개인정보 처리방침',
+    content: `메디노트 개인정보 처리방침
+
+■ 제1조 (수집하는 개인정보)
+회사는 서비스 제공을 위해 다음의 개인정보를 수집합니다.
+• 필수 항목: 이메일, 이름, 비밀번호
+• 민감정보: 질병 정보, 복용 약 정보, 알러지 정보, 진료 기록 등 「개인정보 보호법」상 민감정보에 해당하는 항목
+
+■ 제2조 (개인정보의 수집 및 이용 목적)
+• 회원 가입 및 관리
+• 건강 정보 관리 및 맞춤형 서비스 제공
+• AI 기반 건강 상담 서비스 제공
+
+■ 제3조 (개인정보의 보유 및 이용 기간)
+• 회원 탈퇴 시 즉시 파기
+• 단, 관계 법령에 따라 보존할 필요가 있는 경우 해당 법령에서 정한 기간 동안 보관
+
+■ 제4조 (개인정보의 제3자 제공)
+회사는 원칙적으로 이용자의 개인정보를 제3자에게 제공하지 않습니다. 다만, 법령의 규정에 의거하거나 이용자의 동의가 있는 경우에는 예외로 합니다.
+
+■ 제5조 (개인정보의 파기)
+회사는 개인정보 보유 기간의 경과, 처리 목적 달성 등 개인정보가 불필요하게 되었을 때에는 지체 없이 해당 개인정보를 파기합니다.`,
+  },
+  terms: {
+    title: '서비스 이용약관',
+    content: `메디노트 서비스 이용약관
+
+■ 제1조 (목적)
+본 약관은 메디노트 서비스의 이용 조건 및 절차, 회사와 이용자의 권리·의무 및 책임사항을 규정함을 목적으로 합니다.
+
+■ 제2조 (서비스의 내용)
+회사는 건강 정보 관리 및 AI 기반 건강 상담 서비스를 제공합니다.
+
+■ 제3조 (의료 면책 조항)
+① 본 서비스에서 제공하는 AI 기반 답변, 건강 분석 리포트 및 기타 정보는 사용자의 편의를 위한 참고 자료일 뿐이며, 의사·약사 등 전문 의료인의 진단, 처방, 또는 의학적 조언을 대체하지 않습니다.
+② 건강상 이상 또는 질환이 의심되는 경우, 반드시 전문 의료기관을 방문하여 의료 전문가와 상담하시기 바랍니다.
+③ 본 서비스는 의료행위를 제공하지 않으며, 사용자가 AI 답변을 신뢰함으로써 발생하는 어떠한 결과에 대해서도 법적 책임을 부담하지 않습니다.
+
+■ 제4조 (데이터의 정확성 및 책임)
+① 본 서비스에 입력되는 건강정보는 사용자가 직접 입력한 내용을 기반으로 합니다.
+② 사용자가 부정확하거나 오래된 정보를 입력함으로써 발생하는 결과, 오류, 또는 불이익에 대해서는 전적으로 사용자 본인에게 책임이 있습니다.
+③ 회사는 사용자가 입력한 데이터의 정확성, 완전성, 최신성에 대해 보증하지 않습니다.
+
+■ 제5조 (데이터 유실 및 백업)
+① 회사는 사용자의 데이터가 안전하게 저장되도록 합리적인 기술적·관리적 조치를 취합니다.
+② 그러나 서버 오류, 시스템 장애, 또는 예기치 못한 기술적 문제로 인해 데이터가 유실될 가능성이 있습니다.
+③ 사용자는 중요한 건강 정보를 PDF 내보내기 기능을 통해 주기적으로 백업하시기를 권장합니다.
+④ 회사는 고의 또는 중대한 과실이 없는 한, 데이터 유실로 인한 손해에 대해 책임을 부담하지 않습니다.
+
+■ 제6조 (서비스의 변경 및 중단)
+회사는 서비스 개선을 위해 사전 공지 후 서비스를 변경하거나 중단할 수 있습니다.`,
+  },
+};
+
+function InfoModal({
+  type,
+  onClose,
+}: {
+  type: 'help' | 'privacy' | 'terms';
+  onClose: () => void;
+}) {
+  const { title, content } = INFO_CONTENT[type];
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] flex flex-col">
+        <div className="p-6 border-b">
+          <h2 className="text-xl font-bold text-dark-gray">{title}</h2>
+        </div>
+
+        <div className="p-6 overflow-y-auto flex-1">
+          <p className="text-sm text-gray-600 whitespace-pre-line">{content}</p>
+        </div>
+
+        <div className="p-4 border-t">
+          <button
+            onClick={onClose}
+            className="w-full py-3 rounded-lg bg-mint text-white font-bold hover:bg-mint/90"
+          >
+            확인
           </button>
         </div>
       </div>

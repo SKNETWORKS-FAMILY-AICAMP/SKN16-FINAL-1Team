@@ -53,11 +53,30 @@ services:
       context: ./medinote_front
       args:
         VITE_API_URL: ${VITE_API_URL}
+        VITE_CHATBOT_API_URL: ${VITE_CHATBOT_API_URL}
     container_name: medinote_frontend
     depends_on:
       - backend
     ports:
       - "4173:4173"
+    restart: unless-stopped
+
+
+  # 🔥 새로 추가: LLM 서비스
+  llm:
+    build:
+      context: ./AI_service_LLM        # 이 폴더 안의 Dockerfile 사용
+    container_name: medinote_llm
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      CHROMA_DB_DIR: ${CHROMA_DB_DIR}
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/medinote  # 추가
+      BACKEND_BASE_URL: http://backend:8000
+    volumes:
+      # 호스트의 /home/ubuntu/chroma_db → 컨테이너 /app/chroma_db 에 마운트 (옵션)
+      - /home/ubuntu/chroma_db:/app/chroma_db
+    ports:
+      - "8001:8001"
     restart: unless-stopped
 
 volumes:

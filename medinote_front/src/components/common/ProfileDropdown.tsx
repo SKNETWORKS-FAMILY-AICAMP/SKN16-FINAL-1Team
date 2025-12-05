@@ -1,36 +1,40 @@
 // src/components/common/ProfileDropdown.tsx
 
-import React, { useEffect, useState } from 'react';
+import React /*, { useEffect, useState } */ from 'react';
 import { useNavigate } from 'react-router-dom';
 import useUserStore from '../../store/useUserStore';
-import { HiOutlineUser, HiOutlineCog, HiOutlineMoon, HiOutlineLogout } from 'react-icons/hi';
+import { HiOutlineUser, HiOutlineCog, /* HiOutlineMoon, */ HiOutlineLogout } from 'react-icons/hi';
 
-type Theme = 'light' | 'dark';
+// type Theme = 'light' | 'dark';
 
-export default function ProfileDropdown() {
+type ProfileDropdownProps = {
+  onClose?: () => void;
+};
+
+export default function ProfileDropdown({ onClose }: ProfileDropdownProps) {
   const navigate = useNavigate();
   const userName = useUserStore((s) => s.userName);
   const userEmail = useUserStore((s) => s.userEmail);
   const logout = useUserStore((s) => s.logout);
 
-  const [theme, setTheme] = useState<Theme>('light');
+  // const [theme, setTheme] = useState<Theme>('light');
 
-  useEffect(() => {
-    const stored = (localStorage.getItem('theme') as Theme) || 'light';
-    applyTheme(stored);
-  }, []);
+  // useEffect(() => {
+  //   const stored = (localStorage.getItem('theme') as Theme) || 'light';
+  //   applyTheme(stored);
+  // }, []);
 
-  const applyTheme = (t: Theme) => {
-    setTheme(t);
-    localStorage.setItem('theme', t);
-    const root = document.documentElement;
-    if (t === 'dark') root.classList.add('dark');
-    else root.classList.remove('dark');
-  };
+  // const applyTheme = (t: Theme) => {
+  //   setTheme(t);
+  //   localStorage.setItem('theme', t);
+  //   const root = document.documentElement;
+  //   if (t === 'dark') root.classList.add('dark');
+  //   else root.classList.remove('dark');
+  // };
 
-  const toggleTheme = () => applyTheme(theme === 'light' ? 'dark' : 'light');
-  const goSettings = () => navigate('/settings');
-  const handleLogout = () => { logout(); navigate('/'); };
+  // const toggleTheme = () => applyTheme(theme === 'light' ? 'dark' : 'light');
+  const goSettings = () => { onClose?.(); navigate('/settings'); };
+  const handleLogout = () => { onClose?.(); logout(); navigate('/'); };
 
   return (
     <div className="absolute top-12 right-0 w-60 bg-white dark:bg-gray-800 rounded-md shadow-popup z-50 border border-gray-100 dark:border-gray-700">
@@ -42,7 +46,7 @@ export default function ProfileDropdown() {
       <ul className="py-2">
         <MenuItem icon={<HiOutlineUser />} text="프로필" onClick={goSettings} />
         <MenuItem icon={<HiOutlineCog />} text="설정" onClick={goSettings} />
-        <MenuItem icon={<HiOutlineMoon />} text={`테마: ${theme === 'light' ? '라이트' : '다크'}`} onClick={toggleTheme} />
+        {/* <MenuItem icon={<HiOutlineMoon />} text={`테마: ${theme === 'light' ? '라이트' : '다크'}`} onClick={toggleTheme} /> */}
       </ul>
 
       <div className="p-2 border-t dark:border-gray-700">

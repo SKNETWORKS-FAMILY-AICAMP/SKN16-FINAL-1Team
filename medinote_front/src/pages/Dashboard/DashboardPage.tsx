@@ -10,7 +10,7 @@ import {
   HiOutlineUser,
   HiOutlineClipboardList,
   HiOutlineChartBar,
-  HiOutlineCalendar,
+  HiOutlineChatAlt2,
   HiOutlineArrowRight,
   HiOutlineCheckCircle,
 } from "react-icons/hi";
@@ -203,9 +203,9 @@ export default function DashboardPage() {
           title="건강분석"
         />
         <MenuCard
-          to="/schedule"
-          icon={<HiOutlineCalendar className="text-mint text-3xl" />}
-          title="일정관리"
+          to="/chatbot"
+          icon={<HiOutlineChatAlt2  className="text-mint text-3xl" />}
+          title="챗봇"
         />
       </section>
     </div>
