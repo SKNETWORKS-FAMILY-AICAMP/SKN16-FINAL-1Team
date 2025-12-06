@@ -32,6 +32,9 @@ class User(Base):
     allergies = relationship("Allergy", back_populates="user")
     chronic_diseases = relationship("ChronicDisease", back_populates="user")
     acute_diseases = relationship("AcuteDisease", back_populates="user")
+    files = relationship("File", back_populates="user", cascade="all, delete")
+    ocr_jobs = relationship("OCRJob", back_populates="user", cascade="all, delete")
+
 
     # STT
     stt_jobs = relationship("STTJob", back_populates="user")
@@ -123,6 +126,7 @@ class Visit(Base):
     date = Column(Date, nullable=False)
 
     user = relationship("User", back_populates="visits")
+    ocr_jobs = relationship("OCRJob", back_populates="visit", cascade="all, delete")
 
     prescriptions = relationship(
         "Prescription",
@@ -286,3 +290,64 @@ class STTJob(Base):
     updated_at = Column(DateTime, onupdate=func.now())
 
     user = relationship("User", back_populates="stt_jobs")
+
+# ============================================================
+# FILE (업로드된 파일 메타데이터 저장)
+# ============================================================
+class File(Base):
+    __tablename__ = "file"   # ← DBeaver 테이블명과 일치시킴
+
+    file_id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
+
+    # 업로드된 실제 파일 경로
+    path = Column(String(255), nullable=False)
+
+    # 원본 파일명
+    original_name = Column(String(255), nullable=False)
+
+    # MIME 타입 (image/png, application/pdf 등)
+    mime_type = Column(String(100), nullable=True)
+
+    # 파일 크기 (bytes)
+    size = Column(Integer, nullable=True)
+
+    # 메모 (선택 사항)
+    memo = Column(String(255), nullable=True)
+
+    created_at = Column(DateTime, server_default=func.now())
+
+    # 관계 설정
+    user = relationship("User", back_populates="files")
+    ocr_jobs = relationship("OCRJob", back_populates="file", cascade="all, delete")
+
+# ============================================================
+# OCR JOB (OCR 결과 저장)
+# ============================================================
+class OCRJob(Base):
+    __tablename__ = "ocr_job"   # ← DBeaver의 테이블명과 동일
+
+    ocr_id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
+    file_id = Column(Integer, ForeignKey("file.file_id"), nullable=False)
+
+    # Visit 연동용
+    visit_id = Column(Integer, ForeignKey("visit.visit_id"), nullable=True)
+    #   ↑ 'visit'이 정답!  (DBeaver 테이블명이 visit)
+
+    # "record" | "chatbot"
+    source_type = Column(String(20), nullable=False)
+
+    # RUNNING / DONE / FAILED
+    status = Column(String(20), default="RUNNING")
+
+    # OCR 결과 텍스트
+    text = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, server_default=func.now())
+    completed_at = Column(DateTime, nullable=True)
+
+    # 관계 설정
+    user = relationship("User", back_populates="ocr_jobs")
+    file = relationship("File", back_populates="ocr_jobs")
+    visit = relationship("Visit", back_populates="ocr_jobs")
