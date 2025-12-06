@@ -108,7 +108,7 @@ def _convert_to_out(s):
         "title": s.title,
         "type": s.type,
         "date": s.date,
-        "time": s.time,
+        "time": s.time.isoformat() if s.time else None,
         "location": s.location,
         "memo": s.memo,
         "created_at": s.created_at,

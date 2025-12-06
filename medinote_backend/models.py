@@ -20,7 +20,7 @@ class User(Base):
     password = Column(String(255), nullable=False)
     name = Column(String(50), nullable=False)
     role = Column(String(20), nullable=False, default="user")
-    avatar = Column(String(255), nullable=True)  # 프로필 이미지
+    avatar = Column(String(255), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
     # Relationships
@@ -33,7 +33,10 @@ class User(Base):
     chronic_diseases = relationship("ChronicDisease", back_populates="user")
     acute_diseases = relationship("AcuteDisease", back_populates="user")
 
-    # CHATBOT (retry 쪽 구조)
+    # STT
+    stt_jobs = relationship("STTJob", back_populates="user")
+
+    # CHATBOT
     chatlogs = relationship("ChatLog", back_populates="user")
     chat_sessions = relationship("ChatSession", back_populates="user")
 
@@ -54,7 +57,7 @@ class RefreshToken(Base):
 
 
 # ============================================================
-# HEALTH PROFILE (유저당 1개)
+# HEALTH PROFILE
 # ============================================================
 class HealthProfile(Base):
     __tablename__ = "health_profile"
@@ -64,7 +67,7 @@ class HealthProfile(Base):
         Integer,
         ForeignKey("users.user_id", ondelete="CASCADE"),
         nullable=False,
-        unique=True,  # 유저당 하나만 생성
+        unique=True
     )
 
     birth = Column(Date)
@@ -91,8 +94,6 @@ class Drug(Base):
     dosage_form = Column(String(50), nullable=False)
     dose = Column(String(50), nullable=False)
     unit = Column(String(20), nullable=False)
-
-    # 🔥 ARRAY → JSON으로 변경 (main 기준)
     schedule = Column(JSON, nullable=False)
     custom_schedule = Column(String(100), nullable=True)
 
@@ -115,19 +116,18 @@ class Visit(Base):
     dept = Column(String(50), nullable=False)
     diagnosis_code = Column(String(20), nullable=False)
 
-    diagnosis_name = Column(String(100))  # 프론트: title
-    doctor_name = Column(String(50))      # 프론트: doctor
-    symptom = Column(Text)                # 프론트: symptoms
-    opinion = Column(Text)                # 프론트: notes(memo)
+    diagnosis_name = Column(String(100))
+    doctor_name = Column(String(50))
+    symptom = Column(Text)
+    opinion = Column(Text)
     date = Column(Date, nullable=False)
 
     user = relationship("User", back_populates="visits")
 
-    # 핵심: Visit → Prescription (정상적인 1:N)
     prescriptions = relationship(
         "Prescription",
         back_populates="visit",
-        cascade="all, delete",
+        cascade="all, delete"
     )
 
 
@@ -138,22 +138,20 @@ class Prescription(Base):
     __tablename__ = "prescription"
 
     prescription_id = Column(Integer, primary_key=True, autoincrement=True)
-
     user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
     visit_id = Column(Integer, ForeignKey("visit.visit_id"), nullable=False)
 
-    med_name = Column(String(100), nullable=False)       # 약 이름
-    dosage_form = Column(String(50), nullable=False)     # 정제/캡슐 등
-    dose = Column(String(50), nullable=False)            # 용량 숫자
-    unit = Column(String(20), nullable=False)            # mg, g, ml …
+    med_name = Column(String(100), nullable=False)
+    dosage_form = Column(String(50), nullable=False)
+    dose = Column(String(50), nullable=False)
+    unit = Column(String(20), nullable=False)
 
-    schedule = Column(JSON, nullable=False)              # ["아침", "저녁"]
-    custom_schedule = Column(String(100), nullable=True) # 기타 직접 입력
+    schedule = Column(JSON, nullable=False)
+    custom_schedule = Column(String(100), nullable=True)
 
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=False)
 
-    # 관계 연결
     user = relationship("User", back_populates="prescriptions")
     visit = relationship("Visit", back_populates="prescriptions")
 
@@ -165,11 +163,7 @@ class Allergy(Base):
     __tablename__ = "allergy"
 
     allergy_id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(
-        Integer,
-        ForeignKey("users.user_id", ondelete="CASCADE"),
-        nullable=False,
-    )
+    user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
 
     allergy_name = Column(String(100), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -184,11 +178,7 @@ class ChronicDisease(Base):
     __tablename__ = "chronic_disease"
 
     chronic_id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(
-        Integer,
-        ForeignKey("users.user_id", ondelete="CASCADE"),
-        nullable=False,
-    )
+    user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
 
     disease_name = Column(String(100), nullable=False)
     note = Column(Text)
@@ -203,11 +193,7 @@ class AcuteDisease(Base):
     __tablename__ = "acute_disease"
 
     acute_id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(
-        Integer,
-        ForeignKey("users.user_id", ondelete="CASCADE"),
-        nullable=False,
-    )
+    user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
 
     disease_name = Column(String(100), nullable=False)
     note = Column(Text)
@@ -225,7 +211,7 @@ class Schedule(Base):
     user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
 
     title = Column(String(100), nullable=False)
-    type = Column(String(20), nullable=False)  # "진료", "검진", "기타"
+    type = Column(String(20), nullable=False)
     date = Column(Date, nullable=False)
     time = Column(String, nullable=True)
     location = Column(String(100), nullable=True)
@@ -238,7 +224,7 @@ class Schedule(Base):
 
 
 # ============================================================
-# CHAT SESSION (대화방)  — retry 버전
+# CHAT SESSION (대화방)
 # ============================================================
 class ChatSession(Base):
     __tablename__ = "chat_session"
@@ -253,12 +239,12 @@ class ChatSession(Base):
     messages = relationship(
         "ChatLog",
         back_populates="session",
-        cascade="all, delete-orphan",
+        cascade="all, delete-orphan"
     )
 
 
 # ============================================================
-# CHAT LOG (메시지) — retry 버전
+# CHAT LOG (메시지)
 # ============================================================
 class ChatLog(Base):
     __tablename__ = "chat_log"
@@ -267,17 +253,12 @@ class ChatLog(Base):
     session_id = Column(
         Integer,
         ForeignKey("chat_session.session_id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=False
     )
     user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
 
-    role = Column(String(10), nullable=False)   # user / assistant
-    content = Column(Text, nullable=False)      # 메시지 내용
-
-    # 각 메시지에 대한 출처 리스트(JSON)
-    # 예: [{"id": "...", "collection": "disease", "title": "...", "url": "...", "score": 0.87}, ...]
-    sources = Column(JSON, nullable=True)
-
+    role = Column(String(10), nullable=False)  # user / assistant
+    content = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     session = relationship("ChatSession", back_populates="messages")
@@ -285,16 +266,21 @@ class ChatLog(Base):
 
 
 # ============================================================
-# STT JOB (음성→텍스트 변환 작업) — main 버전
+# STT JOB (음성 분석 결과 저장)
 # ============================================================
 class STTJob(Base):
-    __tablename__ = "stt_job"
+    __tablename__ = "stt_jobs"
 
-    stt_id = Column(String(50), primary_key=True, index=True)
-    user_id = Column(Integer, nullable=False)
-    status = Column(String(20), nullable=False, default="pending")  # pending, done, error
+    stt_id = Column(String, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
 
+    status = Column(String(20), default="pending")  # pending / processing / done / error
     diagnosis = Column(String(200), nullable=True)
     symptoms = Column(Text, nullable=True)
     notes = Column(Text, nullable=True)
     date = Column(String(20), nullable=True)
+
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, onupdate=func.now())
+
+    user = relationship("User", back_populates="stt_jobs")

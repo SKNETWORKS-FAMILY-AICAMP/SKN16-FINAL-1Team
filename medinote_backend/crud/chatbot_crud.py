@@ -1,5 +1,3 @@
-from typing import Optional, List, Dict, Any
-
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from models import ChatSession, ChatLog
@@ -25,34 +23,27 @@ def create_session(db: Session, user_id: int, title: str) -> ChatSession:
 def get_session(db: Session, user_id: int, session_id: int) -> ChatSession | None:
     return (
         db.query(ChatSession)
-        .filter(
-            ChatSession.user_id == user_id,
-            ChatSession.session_id == session_id
-        )
+        .filter(ChatSession.user_id == user_id,
+                ChatSession.session_id == session_id)
         .first()
     )
 
 
 # ============================================================
 # 3) 메시지 저장 (한 줄)
-#    - role: "user" / "assistant"
-#    - content: 실제 메시지 텍스트
-#    - sources: assistant 메시지일 때만, 출처 리스트(JSON)
 # ============================================================
 def save_message(
     db: Session,
     user_id: int,
     session_id: int,
     role: str,
-    content: str,
-    sources: Optional[List[Dict[str, Any]]] = None,
+    content: str
 ) -> ChatLog:
     msg = ChatLog(
         session_id=session_id,
         user_id=user_id,
         role=role,
-        content=content,
-        sources=sources,  # 🔥 새 필드 저장 (없으면 None)
+        content=content
     )
     db.add(msg)
     db.commit()

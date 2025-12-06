@@ -19,7 +19,6 @@ from schemas.chatbot_schemas import (
     ChatSessionItem,
     ChatSessionDetailResponse,
     ChatMessageItem,
-    ChatSource,
 )
 
 USE_FAKE_AUTH = True
@@ -37,9 +36,8 @@ router = APIRouter(prefix="/chatbot", tags=["Chatbot"])
 # POST /chatbot/query
 # (프론트의 query/answer 명세는 그대로 유지)
 # ------------------------------------------------------------
-# 내부(DB 저장)에서는
-#   - query → role=user, content=query, sources=None
-#   - answer → role=assistant, content=answer, sources=[...]
+# 🔥 내부(DB 저장)에서는 query → role=user, content=query
+# 🔥 answer → role=assistant, content=answer
 # ============================================================
 @router.post("/query", response_model=ChatbotQueryResponse)
 def chatbot_query(payload: ChatbotQueryRequest, db: Session = Depends(get_db)):
@@ -51,51 +49,57 @@ def chatbot_query(payload: ChatbotQueryRequest, db: Session = Depends(get_db)):
         if not session:
             raise HTTPException(404, "세션을 찾을 수 없습니다.")
     else:
-        # 새 세션 생성 (초기 제목은 사용자의 첫 질문)
+        # 🔥 수정 설명:
+        #   기존에는 chat_log에 단일 row를 저장했지만,
+        #   정석 GPT 구조에서는 세션(chat_session) 먼저 생성해야 함.
         session = create_session(db, user_id, title=payload.query)
 
     session_id = session.session_id
 
     # ============================================================
     # 1) 사용자 메시지 저장
+    # ------------------------------------------------------------
+    # 🔥 수정된 핵심 부분:
+    #   기존: create_chatlog(user_id, query, answer)
+    #   변경: "메시지 1개 = DB row 1개" 구조로 바꾸기 위해
+    #         role=user / content=query 형태로 저장
     # ============================================================
     save_message(
         db=db,
         user_id=user_id,
         session_id=session_id,
-        role="user",
-        content=payload.query,
-        sources=None,   # 🔥 user 메시지에는 출처 없음
+        role="user",              # 🔥 새로운 구조: role 추가
+        content=payload.query,    # 🔥 query 텍스트를 content로 저장
     )
 
     # ============================================================
-    # 2) LLM 응답 (현재는 더미 / 나중에 LangGraph로 교체)
+    # 2) LLM 응답 (더미)
+    # ------------------------------------------------------------
+    # API 명세상 프론트는 answer라는 필드가 필요하므로 answer 변수 유지
     # ============================================================
     answer = "최근 복용한 약은 타이레놀입니다."
 
-    # 🔥 나중에 LangGraph 연결 시,
-    # final_state.sources 같은 걸로 교체하면 됨
-    sources: list[dict] = []  # 지금은 빈 리스트
-
     # ============================================================
-    # 3) AI(assistant) 메시지 저장 (출처 포함)
+    # 3) AI(assistant) 메시지 저장
+    # ------------------------------------------------------------
+    # 🔥 수정된 핵심 부분:
+    #   answer를 content로 변환해서 저장
+    #   즉, 기존 answer 컬럼 없음 → content로 통일
     # ============================================================
     save_message(
         db=db,
         user_id=user_id,
         session_id=session_id,
-        role="assistant",
-        content=answer,
-        sources=sources,   # 🔥 여기서 DB에 저장
+        role="assistant",     # 🔥 assistant 역할 추가
+        content=answer,       # 🔥 answer 텍스트를 content로 저장
     )
 
     # ============================================================
-    # 4) 프론트로 응답 (answer + sources)
+    # 4) 프론트로 응답 (answer는 API 명세 유지)
     # ============================================================
     return ChatbotQueryResponse(
         session_id=session_id,
         answer=answer,
-        sources=[ChatSource(**s) for s in sources],  # 지금은 빈 리스트
     )
 
 
@@ -111,7 +115,7 @@ def get_sessions(db: Session = Depends(get_db)):
         ChatSessionItem(
             session_id=row.session_id,
             title=row.title,
-            created_at=row.created_at,  # datetime → 스키마에서 자동 변환
+            created_at=row.created_at.isoformat(),
         )
         for row in rows
     ]
@@ -136,8 +140,7 @@ def get_session_detail(session_id: int, db: Session = Depends(get_db)):
         ChatMessageItem(
             role=row.role,              # user / assistant
             content=row.content,        # 실제 메시지 텍스트
-            created_at=row.created_at,  # datetime → 자동 변환
-            sources=row.sources,        # 🔥 ChatLog.sources(JSON) → ChatMessageItem.sources
+            created_at=row.created_at.isoformat(),
         )
         for row in rows
     ]
