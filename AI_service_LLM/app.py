@@ -24,6 +24,18 @@ from chatbot.core.chat_repository import (
 from chatbot.core.state import ChatState
 from chatbot.core.supervisor import run_orchestrator
 
+# 🔹 건강 분석용 (db_agent 로직 재사용)
+from chatbot.core.user_repository import (
+    get_user_profile,
+    get_allergies,
+    get_chronic_diseases,
+    get_acute_diseases,
+    get_drugs,
+    get_prescriptions,
+    get_visits,
+)
+from chatbot.core.llm import call_llm
+
 load_dotenv()
 
 # ============================================
@@ -88,6 +100,11 @@ class ChatQueryResponse(BaseModel):
     answer: str
     # 🔥 이번 턴에서 사용된 출처 리스트
     sources: List[ChatSource] = []
+
+
+class HealthAnalysisResponse(BaseModel):
+    """건강 분석 리포트 응답 (챗봇 이력 저장 X)"""
+    analysis: str
 
 
 class SessionItem(BaseModel):
@@ -355,3 +372,143 @@ async def delete_one_chatbot_session(session_id: int):
         raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
 
     return f"{session_id}번 세션을 삭제했습니다."
+
+
+# ============================================
+# POST /chatbot/analysis  (건강 분석 리포트 - 챗봇 이력 저장 X)
+# ============================================
+
+HEALTH_ANALYSIS_PROMPT = """
+당신은 사용자의 건강 상태를 분석하여 의사에게 전달하기 좋은 형태의 요약 리포트를 작성하는 어시스턴트입니다.
+
+다음 형식으로 건강 분석 리포트를 작성하세요:
+
+1. 기본 건강 정보
+   - 사용자의 기본 건강 정보(신장, 몸무게) 및 BMI 상태 (저체중/정상/과체중/비만) 
+
+2. 현재 복용 중인 약
+   - 처방약, 영양제, 만성질환약 목록
+
+3. 주요 건강 이력
+   - 알레르기, 만성질환, 급성질환
+   
+4. 최근 진료 기록 (3개월)
+   - 진료과, 진단명
+
+주의사항:
+- 간결하고 명확하게 작성
+- 마크다운 기호(*, #, -) 사용하지 않기
+- 이모티콘 사용하지 않기
+- "담당 의사와 상담이 필요합니다" 같은 문구 제외
+"""
+
+
+@app.post("/chatbot/analysis", response_model=HealthAnalysisResponse, tags=["chatbot"])
+async def post_health_analysis():
+    """
+    건강 분석 리포트 생성 (챗봇 대화 이력 저장 X)
+    - db_agent 로직 재사용하여 사용자 건강 데이터 조회
+    - LLM으로 분석 리포트 생성
+    - chat_log에 저장하지 않음
+    """
+    user_id = _default_user_id()
+
+    # 1) 백엔드에서 건강 데이터 조회 (병렬 처리로 속도 개선)
+    import concurrent.futures
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=7) as executor:
+            future_profile = executor.submit(get_user_profile, user_id)
+            future_allergies = executor.submit(get_allergies, user_id)
+            future_chronic = executor.submit(get_chronic_diseases, user_id)
+            future_acute = executor.submit(get_acute_diseases, user_id)
+            future_drugs = executor.submit(get_drugs, user_id)
+            future_prescriptions = executor.submit(get_prescriptions, user_id)
+            future_visits = executor.submit(get_visits, user_id)
+
+            profile = future_profile.result()
+            allergies = future_allergies.result()
+            chronic = future_chronic.result()
+            acute = future_acute.result()
+            drugs = future_drugs.result()
+            prescriptions = future_prescriptions.result()
+            visits = future_visits.result()   
+    except Exception as e:
+        print(f"[ANALYSIS ERROR] user_id={user_id} error={e!r}")
+        raise HTTPException(
+            status_code=500,
+            detail="건강 정보를 불러오는 중 오류가 발생했습니다."
+        )
+
+    # 2) LLM에 전달할 컨텍스트 구성
+    context_blocks = []
+
+    if profile:
+        # BMI 계산
+        height = profile.get('height')
+        weight = profile.get('weight')
+        bmi_str = ""
+        if height and weight:
+            h_m = float(height) / 100
+            bmi = float(weight) / (h_m * h_m)
+            bmi_str = f" (BMI: {bmi:.1f})"
+
+        context_blocks.append(
+            f"[건강 프로필]\n"
+            f"출생: {profile.get('birth')}\n"
+            f"성별: {profile.get('gender')}\n"
+            f"혈액형: {profile.get('blood_type')}\n"
+            f"키: {profile.get('height')} cm\n"
+            f"몸무게: {profile.get('weight')} kg{bmi_str}\n"
+            f"음주: {profile.get('drinking')}\n"
+            f"흡연: {profile.get('smoking')}"
+        )
+
+    if allergies:
+        context_blocks.append(
+            "[알레르기]\n" + "\n".join([a.get('allergy_name', '') for a in allergies])
+        )
+
+    if chronic:
+        context_blocks.append(
+            "[만성 질환]\n" + "\n".join([f"{c.get('disease_name')} ({c.get('note', '')})" for c in chronic])
+        )
+
+    if acute:
+        context_blocks.append(
+            "[급성 질환]\n" + "\n".join([f"{a.get('disease_name')} ({a.get('note', '')})" for a in acute])
+        )
+
+    if drugs:
+        drug_lines = [f"{d.get('med_name')} {d.get('dose')}{d.get('unit')} ({d.get('schedule')})" for d in drugs]
+        context_blocks.append("[복용 중인 약]\n" + "\n".join(drug_lines))
+
+    if prescriptions:
+        pres_lines = [f"{p.get('med_name')} ({p.get('start_date')}~{p.get('end_date')})" for p in prescriptions]
+        context_blocks.append("[처방 이력]\n" + "\n".join(pres_lines))
+
+    if visits:
+        visit_lines = [f"{v.get('hospital')} {v.get('dept')} - {v.get('diagnosis_name')} ({v.get('date')})" for v in visits]
+        context_blocks.append("[진료 기록]\n" + "\n".join(visit_lines))
+
+    medical_context = "\n\n".join(context_blocks) if context_blocks else "등록된 건강 정보가 없습니다."
+
+    # 3) LLM 호출
+    try:
+        analysis = call_llm(
+            system_prompt=HEALTH_ANALYSIS_PROMPT,
+            user_message="내 건강 상태를 분석해주세요.",
+            context=medical_context,
+        )
+    except Exception as e:
+        print(f"[ANALYSIS LLM ERROR] user_id={user_id} error={e!r}")
+        raise HTTPException(
+            status_code=500,
+            detail="건강 분석 중 오류가 발생했습니다."
+        )
+
+    if not analysis:
+        analysis = "건강 정보가 부족하여 분석을 수행할 수 없습니다."
+
+    # 4) 응답 반환 (chat_log 저장 X)
+    return HealthAnalysisResponse(analysis=analysis)

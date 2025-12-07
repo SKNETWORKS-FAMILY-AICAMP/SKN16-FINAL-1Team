@@ -102,3 +102,21 @@ export async function deleteOneChatbotSession(
   );
   return res.data;
 }
+
+/* ==============================
+ * 건강 분석 API (챗봇 이력 저장 X)
+ * ============================== */
+
+export interface HealthAnalysisResponse {
+  analysis: string;
+}
+
+/**
+ * POST /chatbot/analysis
+ * 건강 분석 리포트 요청 (대화 이력 저장 안 함)
+ * 응답: { analysis: string }
+ */
+export async function postHealthAnalysis(): Promise<HealthAnalysisResponse> {
+  const res = await chatbotClient.post<HealthAnalysisResponse>("/chatbot/analysis");
+  return res.data;
+}
