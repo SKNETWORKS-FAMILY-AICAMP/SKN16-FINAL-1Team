@@ -1,0 +1,37 @@
+# Unified requirements for all MediNote Python services (backend, LLM, STT, OCR).
+
+# Web frameworks
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+python-multipart
+httpx>=0.24.0
+
+# Database
+sqlalchemy>=2.0.0
+psycopg2-binary
+
+# Auth / security
+python-jose
+argon2-cffi
+email-validator
+
+# Env & config
+python-dotenv
+pydantic-settings
+
+# LLM / RAG / tools (AI_service_LLM)
+openai>=1.0.0
+langgraph
+chromadb
+tavily-python
+langsmith
+cohere
+
+# OCR service
+paddleocr
+
+# STT service
+pydub
+
+# Testing
+pytest

@@ -10,34 +10,32 @@ from routers.drug_router import router as drug_router
 from routers.visit_router import router as visit_router
 from routers.prescription_router import router as prescription_router
 from routers.schedule_router import router as schedule_router
-from routers.chatbot_router import router as chatbot_router
 from routers.stt_router import router as stt_router
-
-import os
-
+from routers.chatbot_router import router as chatbot_router
+from routers.ocr_router import (
+    ocr_router,
+    visit_ocr_router,
+    prescription_ocr_router,
+    chatbot_ocr_router,
+)
 
 Base.metadata.create_all(bind=engine)
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:4173")
-
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://10.0.2.2:5173",
-        "http://localhost:4173",
-        FRONTEND_URL,
-    ],
+    allow_origins=["http://localhost:5173", "http://10.0.2.2:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+
 @app.get("/")
 def home():
     return {"message": "MediNote FastAPI 연결 성공 🚀"}
+
 
 app.include_router(auth_router)
 app.include_router(user_router)
@@ -46,5 +44,11 @@ app.include_router(drug_router)
 app.include_router(visit_router)
 app.include_router(prescription_router)
 app.include_router(schedule_router)
-app.include_router(chatbot_router)
 app.include_router(stt_router)
+app.include_router(chatbot_router)
+
+# OCR 관련 라우터들
+app.include_router(ocr_router)
+app.include_router(visit_ocr_router)
+app.include_router(prescription_ocr_router)
+app.include_router(chatbot_ocr_router)

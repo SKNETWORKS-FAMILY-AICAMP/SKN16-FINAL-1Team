@@ -5,11 +5,16 @@ from __future__ import annotations
 import os
 from typing import List, Optional
 from datetime import datetime
+from pathlib import Path  # ✅ 추가
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
+
+# 🔹 프로젝트 루트(SKN16-FINAL-1Team)의 .env 를 확실하게 읽도록 설정
+BASE_DIR = Path(__file__).resolve().parents[1]  # .../SKN16-FINAL-1Team
+load_dotenv(dotenv_path=BASE_DIR / ".env")  # ✅ 수정: 항상 루트 .env 사용
 
 # 🔹 DB 저장/조회용 레포지토리
 from chatbot.core.chat_repository import (
@@ -23,8 +28,6 @@ from chatbot.core.chat_repository import (
 # 🔹 ChatState & Supervisor(오케스트레이터)
 from chatbot.core.state import ChatState
 from chatbot.core.supervisor import run_orchestrator
-
-load_dotenv()
 
 # ============================================
 # 공통 설정
