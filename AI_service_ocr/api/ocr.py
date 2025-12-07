@@ -34,13 +34,6 @@ visit_ocr_router = APIRouter(prefix="/visits", tags=["Visit OCR"])
 prescription_ocr_router = APIRouter(prefix="/prescriptions", tags=["Prescription OCR"])
 chatbot_ocr_router = APIRouter(prefix="/chatbot", tags=["Chatbot OCR"])
 
-# 최종으로 app.py에 물릴 router
-router = APIRouter()
-router.include_router(ocr_router)
-router.include_router(visit_ocr_router)
-router.include_router(prescription_ocr_router)
-router.include_router(chatbot_ocr_router)
-
 
 # ======================================================
 # OCR 공통 (모델 테스트용)
@@ -198,3 +191,14 @@ async def chatbot_ocr(
             "created_at": ocr_job.completed_at or ocr_job.created_at,
         },
     )
+
+
+# ======================================================
+# 🔚 최종으로 app.py에 물릴 router
+#    ⬇️ 이 블록은 반드시 파일 맨 아래에 있어야 함
+# ======================================================
+router = APIRouter()
+router.include_router(ocr_router)
+router.include_router(visit_ocr_router)
+router.include_router(prescription_ocr_router)
+router.include_router(chatbot_ocr_router)
