@@ -1,0 +1,21 @@
+# Python virtual env
+.venv/
+.venv_ocr/
+venv/
+env/
+
+# VSCode configs
+.vscode/
+
+# Compiled python files
+__pycache__/
+*.pyc
+
+# Uploaded files
+uploads/
+ocr_uploads/
+files/
+
+# Local settings
+.env
+*.log
