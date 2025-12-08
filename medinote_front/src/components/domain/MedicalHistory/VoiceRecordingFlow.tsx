@@ -1,13 +1,13 @@
 // src/components/domain/MedicalHistory/VoiceRecordingFlow.tsx
 
-import React, { useState, type ChangeEvent } from 'react';
-import { HiOutlineMicrophone, HiOutlineArrowLeft, HiOutlineCheck, HiOutlineSpeakerphone } from 'react-icons/hi';
+import React, { useState, useRef, useEffect, type ChangeEvent } from 'react';
+import { HiOutlineMicrophone, HiOutlineArrowLeft, HiOutlineCheck, HiOutlineSpeakerphone, HiOutlineStop } from 'react-icons/hi';
 import { toast } from 'react-toastify';
-import { type HistoryFormData } from './HistoryForm'; 
+import { type HistoryFormData } from './HistoryForm';
 import { apiClient } from '../../../api/axios';
 import { HiOutlineFolder } from 'react-icons/hi';
 
-type FlowStep = 'selectMethod' | 'consent' | 'processing';
+type FlowStep = 'selectMethod' | 'consent' | 'recording' | 'processing';
 type Props = {
   onComplete: (data: Partial<HistoryFormData>) => void;
   onCancel: () => void;
@@ -16,31 +16,92 @@ type Props = {
 export default function VoiceRecordingFlow({ onComplete, onCancel }: Props) {
   const [step, setStep] = useState<FlowStep>('selectMethod');
   const [hasConsented, setHasConsented] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
 
-  // 파일 선택(녹음 완료) 핸들러
-  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) {
-      toast.error("녹음 파일이 선택되지 않았습니다.");
-      return;
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<number | null>(null);
+
+  // 타이머 정리
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+  }, []);
+
+  // 시간 포맷 (mm:ss)
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // 녹음 시작
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      chunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunksRef.current.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        // 스트림 정리
+        stream.getTracks().forEach(track => track.stop());
+
+        // 녹음 데이터를 Blob으로 변환
+        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        uploadAudio(blob);
+      };
+
+      mediaRecorder.start();
+      setStep('recording');
+      setRecordingTime(0);
+
+      // 타이머 시작
+      timerRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+
+    } catch (err) {
+      toast.error('마이크 접근 권한이 필요합니다.');
     }
+  };
 
+  // 녹음 정지
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  // 오디오 업로드 및 STT 처리
+  const uploadAudio = async (blob: Blob) => {
     setStep('processing');
     toast.info("음성 파일 변환 중...");
 
     try {
-      // 1) 파일 업로드 → stt_id 받기
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('file', blob, 'recording.webm');
       const { data } = await apiClient.post('/stt/analyze', formData);
       const sttId = data.stt_id;
 
-      // 2) Polling으로 결과 대기
+      // Polling으로 결과 대기
       const pollResult = async () => {
         try {
           const res = await apiClient.get(`/stt/${sttId}/status`);
           if (res.data.status === 'done') {
-            // 3) 완료되면 결과를 form에 전달
             toast.success("음성 변환 완료!");
             onComplete({
               title: res.data.diagnosis,
@@ -51,7 +112,6 @@ export default function VoiceRecordingFlow({ onComplete, onCancel }: Props) {
             toast.error('STT 처리 실패');
             onCancel();
           } else {
-            // pending이면 2초 후 재확인
             setTimeout(pollResult, 2000);
           }
         } catch (err) {
@@ -67,6 +127,16 @@ export default function VoiceRecordingFlow({ onComplete, onCancel }: Props) {
     }
   };
 
+  // 파일 선택 핸들러
+  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      toast.error("녹음 파일이 선택되지 않았습니다.");
+      return;
+    }
+    uploadAudio(file);
+  };
+
   // 1. 방법 선택 단계
   if (step === 'selectMethod') {
     return (
@@ -80,9 +150,9 @@ export default function VoiceRecordingFlow({ onComplete, onCancel }: Props) {
           <p className="text-sm text-gray-600 mb-4">
             진료 내용을 음성으로 기록합니다.
           </p>
-          
+
           <input type="file" id="voice-file-input" accept="audio/*" className="hidden" onChange={handleFileChange} />
-          
+
           <div className="flex gap-4 justify-center">
             <button onClick={() => setStep('consent')} className="flex-1 flex flex-col items-center p-4 border rounded-lg hover:bg-gray-50 cursor-pointer">
               <HiOutlineMicrophone className="text-3xl text-mint" />
@@ -102,7 +172,7 @@ export default function VoiceRecordingFlow({ onComplete, onCancel }: Props) {
   if (step === 'consent') {
     return (
       <div className="p-4 space-y-4">
-        <button onClick={() => setStep('selectMethod')} className="...">
+        <button onClick={() => setStep('selectMethod')} className="flex items-center gap-1 text-mint font-semibold mb-2">
           <HiOutlineArrowLeft /> 뒤로
         </button>
         <div className="bg-white p-6 rounded-lg shadow-lg">
@@ -118,7 +188,7 @@ export default function VoiceRecordingFlow({ onComplete, onCancel }: Props) {
             <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${hasConsented ? 'bg-mint border-mint' : 'bg-white border-gray-300'}`}>
               {hasConsented && <HiOutlineCheck className="text-white text-sm" />}
             </div>
-            <input 
+            <input
               type="checkbox"
               checked={hasConsented}
               onChange={(e) => setHasConsented(e.target.checked)}
@@ -126,38 +196,58 @@ export default function VoiceRecordingFlow({ onComplete, onCancel }: Props) {
             />
             <span className="text-sm font-medium text-gray-700">위 내용에 동의합니다.</span>
           </label>
-          {/* 숨겨진 파일 input */}
-          <input 
-            type="file" 
-            id="stt-record-input"
-            accept="audio/*"
-            className="hidden" 
-            onChange={handleFileChange}
-          />
 
-          {/* 녹음 버튼 - 동의 시 빨간색, 미동의 시 회색 */}
+          {/* 녹음 버튼 */}
           <div className="mt-6 text-center">
-            <label 
-              htmlFor={hasConsented ? "stt-record-input" : undefined}
+            <button
+              onClick={hasConsented ? startRecording : undefined}
+              disabled={!hasConsented}
               className={`w-24 h-24 rounded-full flex items-center justify-center mx-auto shadow-xl ${
-                hasConsented 
-                  ? 'bg-red-500 hover:bg-red-600 cursor-pointer' 
+                hasConsented
+                  ? 'bg-red-500 hover:bg-red-600 cursor-pointer'
                   : 'bg-gray-400 cursor-not-allowed'
               } text-white`}
             >
               <HiOutlineMicrophone className="text-4xl" />
-            </label>
+            </button>
             <p className={`text-sm font-semibold mt-3 ${hasConsented ? 'text-red-500' : 'text-gray-400'}`}>
               녹음 시작
             </p>
           </div>
-
         </div>
       </div>
     );
   }
 
-  // 3. 로딩 단계
+  // 3. 녹음 중 단계
+  if (step === 'recording') {
+    return (
+      <div className="p-4">
+        <div className="bg-white p-6 rounded-lg shadow-lg text-center">
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+            <span className="text-red-500 font-semibold">녹음 중</span>
+          </div>
+
+          <div className="text-4xl font-mono font-bold text-dark-gray mb-6">
+            {formatTime(recordingTime)}
+          </div>
+
+          <button
+            onClick={stopRecording}
+            className="w-24 h-24 rounded-full flex items-center justify-center mx-auto shadow-xl bg-gray-700 hover:bg-gray-800 text-white"
+          >
+            <HiOutlineStop className="text-4xl" />
+          </button>
+          <p className="text-sm font-semibold mt-3 text-gray-700">
+            녹음 정지
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // 4. 처리 중 단계
   if (step === 'processing') {
     return (
       <div className="p-4">
@@ -173,6 +263,6 @@ export default function VoiceRecordingFlow({ onComplete, onCancel }: Props) {
       </div>
     );
   }
-  
+
   return null;
 }
