@@ -20,11 +20,11 @@ export default function BottomNavigation() {
       activeIcon: <HiHome className="text-2xl" />, 
       inactiveIcon: <HiOutlineHome className="text-2xl" /> 
     },
-    { 
-      path: '/health-info', 
-      label: '건강정보', 
-      activeIcon: <HiUser className="text-2xl" />, 
-      inactiveIcon: <HiOutlineUser className="text-2xl" /> 
+    {
+      path: '/analysis',
+      label: '건강분석',
+      activeIcon: <HiUser className="text-2xl" />,
+      inactiveIcon: <HiOutlineUser className="text-2xl" />
     },
     { 
       path: '/history', 

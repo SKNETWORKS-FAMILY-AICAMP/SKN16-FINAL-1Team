@@ -26,7 +26,7 @@ export default function VoiceRecordingFlow({ onComplete, onCancel }: Props) {
     }
 
     setStep('processing');
-    toast.info("음성 파일 업로드 중...");
+    toast.info("음성 파일 변환 중...");
 
     try {
       // 1) 파일 업로드 → stt_id 받기
@@ -34,8 +34,6 @@ export default function VoiceRecordingFlow({ onComplete, onCancel }: Props) {
       formData.append('file', file);
       const { data } = await apiClient.post('/stt/analyze', formData);
       const sttId = data.stt_id;
-
-      toast.info("STT 처리 중... 잠시만 기다려주세요.");
 
       // 2) Polling으로 결과 대기
       const pollResult = async () => {

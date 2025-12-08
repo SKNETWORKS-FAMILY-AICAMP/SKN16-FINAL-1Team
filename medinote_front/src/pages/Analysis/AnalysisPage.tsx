@@ -1,6 +1,7 @@
 // src/pages/Analysis/AnalysisPage.tsx
 
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import {
   HiOutlineUser,
   HiOutlineDocumentText,
@@ -71,31 +72,30 @@ export default function AnalysisPage() {
   }, []);
 
   return (
-    <div className="flex flex-col p-4 pb-16 space-y-4">
-      {/* 상단 서브헤더 */}
-      <header className="w-full bg-mint/10 p-4 shadow-sm rounded-lg">
+    <div className="flex flex-col">
+      <header className="w-full bg-mint/10 p-4 shadow-sm">
         <h2 className="text-xl font-bold text-dark-gray">건강분석</h2>
-        <p className="text-sm text-gray-500">
-          입력된 정보를 바탕으로 건강 상태를 분석합니다.
-        </p>
+        <p className="text-sm text-gray-500">입력된 정보를 바탕으로 건강 상태를 분석합니다.</p>
       </header>
-
-      {/* 기본 건강정보 */}
-      <section className="w-full bg-white rounded-lg shadow-lg p-6 flex items-center gap-4">
-        <HiOutlineUser className="text-mint text-4xl" />
-        <div>
-          <h3 className="text-lg font-bold text-dark-gray">
-            {userName} 님 (만 {age}세)
-          </h3>
-          <p className="text-sm text-gray-500">
-            {basicInfo.gender || '성별 미입력'} | {basicInfo.height || '-'}cm | {basicInfo.weight || '-'}kg
-          </p>
-          <p className="text-sm text-gray-700 font-semibold mt-1">
-            BMI: {bmi}
-          </p>
-        </div>
-      </section>
-
+      <div className="p-4 pb-16 space-y-4">
+        {/* 기본 건강정보 */}
+        <Link to="/health-info" className="block">
+          <section className="w-full bg-white rounded-lg shadow-lg p-6 flex items-center gap-4 hover:bg-gray-50 transition-colors cursor-pointer">
+            <HiOutlineUser className="text-mint text-4xl" />
+            <div>
+              <h3 className="text-lg font-bold text-dark-gray">
+                {userName} 님 (만 {age}세)
+              </h3>
+              <p className="text-sm text-gray-500">
+                {basicInfo.gender || '성별 미입력'} | {basicInfo.height || '-'}cm | {basicInfo.weight || '-'}kg
+              </p>
+              <p className="text-sm text-gray-700 font-semibold mt-1">
+                BMI: {bmi}
+              </p>
+            </div>
+          </section>
+        </Link>
+      
       {/* 건강 분석 리포트 */}
       <section className="w-full bg-white rounded-lg shadow-lg">
         <div className="flex items-center justify-between p-4 border-b">
@@ -149,6 +149,7 @@ export default function AnalysisPage() {
           )}
         </div>
       </section>
+     </div>
     </div>
   );
 }
