@@ -24,14 +24,14 @@ export default function AppLayout() {
   };
 
   return (
-    <div className="w-full min-h-screen bg-gray-100 flex justify-center">
-      <div className="relative w-full max-w-lg min-h-screen bg-[#F8FBFB] shadow-md">
+    <div className="w-full h-screen bg-gray-100 flex justify-center">
+      <div className="relative w-full max-w-lg h-screen bg-[#F8FBFB] shadow-md flex flex-col">
         {/* Mainheader */}
         <MainHeader onMenuClick={toggleSidebar} />
         {/* Sidebar */}
         <Sidebar isOpen={isSidebarOpen} onClose={toggleSidebar} onFeedbackClick={openFeedbackModal} />
         {/* 실제 페이지 내용이 표시될 영역 */}
-        <main className="pt-16 pb-20">
+        <main className="flex-1 pt-16 pb-[60px] overflow-y-auto">
           <Outlet />
         </main>
         <BottomNavigation />

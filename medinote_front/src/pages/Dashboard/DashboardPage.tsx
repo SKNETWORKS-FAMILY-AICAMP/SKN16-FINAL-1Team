@@ -160,7 +160,7 @@ export default function DashboardPage() {
         </div>
 
         {/* 약 리스트 */}
-        <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1 custom-scrollbar">
+        <div className="space-y-3 max-h-[195px] overflow-y-auto pr-1 custom-scrollbar">
           {todaysMeds.length > 0 ? (
             todaysMeds.map((m) => (
               <MedCheckItem

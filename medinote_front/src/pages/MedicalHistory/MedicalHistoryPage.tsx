@@ -30,6 +30,8 @@ export default function MedicalHistoryPage() {
   const [query, setQuery] = useState("");
   const [records, setRecords] = useState<HistoryRecord[]>([]);
   const [selected, setSelected] = useState<HistoryRecord | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 4;
 
   useEffect(() => {
     const fetchVisits = async () => {
@@ -46,15 +48,28 @@ export default function MedicalHistoryPage() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return records;
-    return records.filter(
-      (r) =>
-        r.hospital.toLowerCase().includes(q) ||
-        r.title.toLowerCase().includes(q) ||
-        r.symptoms.toLowerCase().includes(q) ||
-        r.meds.join(" ").toLowerCase().includes(q)
-    );
+    const result = q
+      ? records.filter(
+          (r) =>
+            r.hospital.toLowerCase().includes(q) ||
+            r.title.toLowerCase().includes(q) ||
+            r.symptoms.toLowerCase().includes(q) ||
+            r.meds.join(" ").toLowerCase().includes(q)
+        )
+      : [...records];
+    // 최신순 정렬 (날짜 내림차순)
+    return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [records, query]);
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const displayed = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filtered.slice(start, start + PAGE_SIZE);
+  }, [filtered, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [query]);
 
   const handleSave = async (data: HistoryFormData) => {
     try {
@@ -103,64 +118,107 @@ export default function MedicalHistoryPage() {
     setPageState("list");
   };
 
-  if (pageState === "list") {
+  if (pageState === "list" || pageState === "selectMethod") {
     return (
-      <div className="flex flex-col p-4 pb-16 space-y-4">
-        <header className="w-full bg-mint/10 p-4 shadow-sm rounded-lg">
-          <h2 className="text-xl font-bold text-dark-gray">진료기록</h2>
-        </header>
-        <div className="relative">
-          <HiOutlineSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="병원명, 진단명, 증상, 처방약으로 검색"
-            className="w-full pl-10 pr-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-mint"
-          />
-        </div>
-        <button
-          onClick={() => setPageState("selectMethod")}
-          className="w-full flex items-center justify-center gap-2 p-3 bg-mint hover:bg-mint-dark text-white font-bold rounded-lg shadow-lg"
-        >
-          <HiOutlinePlus className="text-xl" /> 새 진료기록 추가
-        </button>
-        <div className="space-y-3">
-          {filtered.map((h) => (
-            <HistoryCard key={h.id} {...h} onClick={() => setSelected(h)} />
-          ))}
-          {filtered.length === 0 && <p className="text-sm text-gray-400 text-center p-4">검색 결과가 없습니다.</p>}
+      <>
+        <div className="flex flex-col">
+          <header className="w-full bg-mint/10 p-4 shadow-sm">
+            <h2 className="text-xl font-bold text-dark-gray">진료기록</h2>
+          </header>
+          <div className="p-4 pb-16 space-y-4">
+            <div className="relative">
+              <HiOutlineSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="검색"
+                className="w-full pl-10 pr-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-mint"
+              />
+            </div>
+            <button
+              onClick={() => setPageState("selectMethod")}
+              className="w-full flex items-center justify-center gap-2 p-3 bg-mint hover:bg-mint-dark text-white font-bold rounded-lg shadow-lg"
+            >
+              <HiOutlinePlus className="text-xl" /> 새 진료기록 추가
+            </button>
+            <div className="space-y-3">
+              {displayed.map((h) => (
+                <HistoryCard key={h.id} {...h} onClick={() => setSelected(h)} />
+              ))}
+              {filtered.length === 0 && <p className="text-sm text-gray-400 text-center p-4">검색 결과가 없습니다.</p>}
+            </div>
+            {totalPages > 1 && (
+              <div className="flex justify-center items-center gap-2 mt-4">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="px-3 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  이전
+                </button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                  <button
+                    key={page}
+                    onClick={() => setCurrentPage(page)}
+                    className={`w-8 h-8 rounded-lg ${currentPage === page ? "bg-mint text-white" : "bg-gray-100 hover:bg-gray-200"}`}
+                  >
+                    {page}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-3 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  다음
+                </button>
+              </div>
+            )}
+
+            {selected && (
+              <HistoryDetailModal
+                record={selected}
+                onClose={() => setSelected(null)}
+                onUpdate={handleUpdate}
+                onDelete={handleDelete}
+                onAddPrescription={() => setIsMedModalOpen(true)}
+              />
+            )}
+
+            {isMedModalOpen && (
+              <AddMedModal
+                onClose={() => setIsMedModalOpen(false)}
+                initialType="prescription"
+                startStep="fillForm"
+                onAdded={(med: any) => {
+                  setRecords((prev) =>
+                    prev.map((r) => (selected && r.id === selected.id ? { ...r, meds: [...r.meds, med.name] } : r))
+                  );
+                  setSelected((prevSelected) => {
+                    if (prevSelected && selected && prevSelected.id === selected.id) {
+                      return { ...prevSelected, meds: [...prevSelected.meds, med.name] };
+                    }
+                    return prevSelected;
+                  });
+                }}
+              />
+            )}
+          </div>
         </div>
 
-        {selected && (
-          <HistoryDetailModal
-            record={selected}
-            onClose={() => setSelected(null)}
-            onUpdate={handleUpdate}
-            onDelete={handleDelete}
-            onAddPrescription={() => setIsMedModalOpen(true)}
-          />
-        )}
-
-        {isMedModalOpen && (
-          <AddMedModal
-            onClose={() => setIsMedModalOpen(false)}
-            initialType="prescription"
-            startStep="fillForm"
-            onAdded={(med: any) => {
-              setRecords((prev) =>
-                prev.map((r) => (selected && r.id === selected.id ? { ...r, meds: [...r.meds, med.name] } : r))
-              );
-              setSelected((prevSelected) => {
-                if (prevSelected && selected && prevSelected.id === selected.id) {
-                  return { ...prevSelected, meds: [...prevSelected.meds, med.name] };
-                }
-                return prevSelected;
-              });
+        {pageState === "selectMethod" && (
+          <AddHistoryMethodModal
+            onClose={() => setPageState("list")}
+            onSelectMethod={(method) => {
+              if (method === "direct") setPageState({ view: "fillForm" });
+              else if (method === "voice") setPageState("voiceFlow");
+              else if (method === "ocr") setPageState("ocrFlow");
+              else setPageState("list");
             }}
           />
         )}
-      </div>
+      </>
     );
   }
 
@@ -185,49 +243,6 @@ export default function MedicalHistoryPage() {
       <div className="p-4">
         <OcrFlow onCancel={handleCancel} onComplete={handleFlowComplete} />
       </div>
-    );
-  }
-
-  if (pageState === "selectMethod") {
-    return (
-      <>
-        <div className="flex flex-col p-4 pb-16 space-y-4">
-          <header className="w-full bg-mint/10 p-4 shadow-sm rounded-lg">
-            <h2 className="text-xl font-bold text-dark-gray">진료기록</h2>
-          </header>
-          <div className="relative">
-            <HiOutlineSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="병원명, 진단명, 증상, 처방약으로 검색"
-              className="w-full pl-10 pr-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-mint"
-            />
-          </div>
-          <button
-            onClick={() => setPageState("selectMethod")}
-            className="w-full flex items-center justify-center gap-2 p-3 bg-mint hover:bg-mint-dark text-white font-bold rounded-lg shadow-lg"
-          >
-            <HiOutlinePlus className="text-xl" /> 새 진료기록 추가
-          </button>
-          <div className="space-y-3">
-            {filtered.map((h) => (
-              <HistoryCard key={h.id} {...h} onClick={() => setSelected(h)} />
-            ))}
-            {filtered.length === 0 && <p className="text-sm text-gray-400 text-center p-4">검색 결과가 없습니다.</p>}
-          </div>
-        </div>
-        <AddHistoryMethodModal
-          onClose={() => setPageState("list")}
-          onSelectMethod={(method) => {
-            if (method === "direct") setPageState({ view: "fillForm" });
-            else if (method === "voice") setPageState("voiceFlow");
-            else if (method === "ocr") setPageState("ocrFlow");
-            else setPageState("list");
-          }}
-        />
-      </>
     );
   }
   return null;

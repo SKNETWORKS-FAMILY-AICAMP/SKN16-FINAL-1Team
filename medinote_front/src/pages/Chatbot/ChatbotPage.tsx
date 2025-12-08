@@ -216,12 +216,12 @@ export default function ChatbotPage() {
   };
 
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col h-full">
       {/* 상단 헤더 */}
-      <header className="w-full bg-mint/10 shadow-sm rounded-lg mb-4">
+      <header className="w-full bg-mint/10 shadow-sm flex-shrink-0">
         <button
           onClick={toggleChatList}
-          className="w-full flex items-center gap-2 p-4 text-left hover:bg-black/5 rounded-lg transition-colors"
+          className="w-full flex items-center gap-2 p-4 text-left hover:bg-black/5 transition-colors"
         >
           <HiOutlineChatAlt2 className="text-mint text-2xl" />
           <div className="flex-1 min-w-0">
@@ -232,7 +232,7 @@ export default function ChatbotPage() {
         </button>
       </header>
 
-      <div className="flex bg-white rounded-lg shadow-lg h-[calc(100vh-180px)] relative overflow-hidden">
+      <div className="flex bg-white shadow-lg flex-1 relative overflow-hidden">
         <ChatSidebar
           isOpen={isChatListOpen}
           onClose={toggleChatList}

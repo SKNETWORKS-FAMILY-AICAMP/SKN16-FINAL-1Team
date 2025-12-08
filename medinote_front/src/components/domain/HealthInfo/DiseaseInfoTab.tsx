@@ -30,6 +30,8 @@ type ModalState = {
   defaultType: "chronic" | "simple";
 };
 
+const PAGE_SIZE = 4;
+
 export default function DiseaseInfoTab() {
   const [filter, setFilter] = useState<Filter>("all");
   const [modalState, setModalState] = useState<ModalState>({
@@ -37,6 +39,7 @@ export default function DiseaseInfoTab() {
     defaultType: "chronic",
   });
   const [selected, setSelected] = useState<Disease | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const diseases = useHealthDataStore((state) => state.diseases);
   const userId = useUserStore((s) => s.user?.id);
@@ -237,6 +240,17 @@ export default function DiseaseInfoTab() {
     (d) => filter === "all" || filter === d.type,
   );
 
+  const totalPages = Math.ceil(filteredDiseases.length / PAGE_SIZE);
+  const displayed = filteredDiseases.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE
+  );
+
+  // 필터 변경 시 페이지 리셋
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filter]);
+
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
@@ -266,8 +280,8 @@ export default function DiseaseInfoTab() {
       </div>
 
       <div className="space-y-3">
-        {filteredDiseases.length > 0 ? (
-          filteredDiseases.map((d) => (
+        {displayed.length > 0 ? (
+          displayed.map((d) => (
             <DiseaseItem
               key={d.id}
               name={d.name}
@@ -285,6 +299,34 @@ export default function DiseaseInfoTab() {
           </p>
         )}
       </div>
+
+      {totalPages > 1 && (
+        <div className="flex justify-center items-center gap-2 mt-4">
+          <button
+            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+            className="px-3 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            이전
+          </button>
+          {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+            <button
+              key={page}
+              onClick={() => setCurrentPage(page)}
+              className={`w-8 h-8 rounded-lg ${currentPage === page ? "bg-mint text-white" : "bg-gray-100 hover:bg-gray-200"}`}
+            >
+              {page}
+            </button>
+          ))}
+          <button
+            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            disabled={currentPage === totalPages}
+            className="px-3 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            다음
+          </button>
+        </div>
+      )}
 
       {modalState.isOpen && (
         <DiseaseModal
