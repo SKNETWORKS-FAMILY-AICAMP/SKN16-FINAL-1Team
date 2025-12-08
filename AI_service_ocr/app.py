@@ -11,15 +11,22 @@ from api.ocr import router as ocr_router
 
 load_dotenv()
 
+# ================================
 # DB 테이블 생성
+# ================================
 Base.metadata.create_all(bind=engine)
 
+# ================================
+# FastAPI 앱 정의
+# ================================
 app = FastAPI(
     title="MediNote OCR Service",
     version="0.1.0",
 )
 
-# CORS 설정 (필요하면 추가)
+# ================================
+# CORS 설정
+# ================================
 origins = [
     os.getenv("FRONTEND_URL", "http://localhost:5173"),
     "http://127.0.0.1:5173",
@@ -34,10 +41,15 @@ app.add_middleware(
 )
 
 
+# ================================
+# 기본 헬스체크 라우터
+# ================================
 @app.get("/")
 def home():
     return {"message": "MediNote OCR Service 연결 성공 🚀"}
 
 
-# OCR 관련 라우터 전체 묶음
+# ================================
+# OCR 라우터 등록
+# ================================
 app.include_router(ocr_router)

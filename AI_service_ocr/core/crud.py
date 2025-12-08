@@ -5,15 +5,18 @@ import os
 import uuid
 import shutil
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
 from core.models import File, OCRJob
-from core.schemas import VisitFormSchema
+from core.schemas import VisitFormSchema, PrescriptionFormSchema
 from core.paddle_pipeline import extract_text_from_image
-from core.gpt_client import parse_visit_form_from_ocr
+from core.gpt_client import (
+    parse_visit_form_from_ocr,
+    parse_prescription_form_from_ocr,
+)
 from core.config import OCR_UPLOAD_DIR
 
 
@@ -31,11 +34,12 @@ def save_file(upload: UploadFile) -> str:
     with open(file_path, "wb") as f:
         shutil.copyfileobj(upload.file, f)
 
+    print(f"[OCR] Saved upload to: {file_path}")
     return file_path
 
 
 # -----------------------------
-# File 레코드 생성
+# File 테이블 Row 생성
 # -----------------------------
 def create_file_record(
     db: Session,
@@ -55,17 +59,20 @@ def create_file_record(
     db.add(file)
     db.commit()
     db.refresh(file)
+    print(f"[OCR] File row created: file_id={file.file_id}, size={size}")
     return file
 
 
 # -----------------------------
-# 실제 OCR 모델 실행 (PaddleOCR)
+# Paddle OCR 실행
 # -----------------------------
 def run_ocr_model(path: str) -> str:
-    """
-    PaddleOCR 기반 실제 OCR 실행.
-    """
-    return extract_text_from_image(path)
+    print(f"[OCR] Running Paddle OCR on: {path}")
+    text = extract_text_from_image(path)
+    print(f"[OCR] OCR text length: {len(text)}")
+    print("[OCR] OCR text head:")
+    print(text[:500])
+    return text
 
 
 # -----------------------------
@@ -78,20 +85,10 @@ def run_ocr_and_save(
     source_type: str,
     visit_id: Optional[int] = None,
 ) -> OCRJob:
-    """
-    1) 파일 저장
-    2) file 테이블에 레코드 생성
-    3) ocr_job 레코드(RUNNING) 생성
-    4) paddleocr 실행 → text
-    5) ocr_job 상태/텍스트/완료시각 업데이트
-    """
-    # 1) 파일 저장
     path = save_file(upload_file)
 
-    # 2) File 레코드 생성
     file_obj = create_file_record(db, user_id, upload_file, path)
 
-    # 3) OCRJob 레코드 생성 (RUNNING)
     ocr = OCRJob(
         user_id=user_id,
         file_id=file_obj.file_id,
@@ -103,40 +100,114 @@ def run_ocr_and_save(
     db.add(ocr)
     db.commit()
     db.refresh(ocr)
+    print(
+        f"[OCR] OCRJob created: ocr_id={ocr.ocr_id}, "
+        f"source_type={source_type}, status={ocr.status}"
+    )
 
-    # 4) OCR 모델 실행
     try:
         text = run_ocr_model(path)
         ocr.text = text
         ocr.status = "DONE"
+        print(f"[OCR] OCRJob {ocr.ocr_id} DONE, text_len={len(text)}")
     except Exception as e:
         ocr.status = "FAILED"
         ocr.text = f"OCR ERROR: {e}"
+        print(f"[OCR][ERROR] OCRJob {ocr.ocr_id} FAILED: {e}")
 
     ocr.completed_at = datetime.utcnow()
-
     db.add(ocr)
     db.commit()
     db.refresh(ocr)
 
+    print(
+        f"[OCR] OCRJob final: ocr_id={ocr.ocr_id}, status={ocr.status}, "
+        f"completed_at={ocr.completed_at}"
+    )
     return ocr
 
 
-# -----------------------------
-# OCR Raw → Visit/Prescription 폼 구조화 (GPT)
-# -----------------------------
+# ==================================================
+# OCR raw text → Visit 구조화
+# ==================================================
 def parse_ocr_text_to_visit(text: str) -> VisitFormSchema:
     """
-    OCR result text → Visit/Prescription 폼 자동 구조화
-
-    - GPT_API를 이용해 VisitFormSchema 형태로 파싱
-    - 실패 시, 최소한의 더미 값으로 fallback
+    OCR result text → Visit Form 자동 구조화
+    GPT가 camelCase / 기타 키로 줘도 스키마에 맞게 매핑
     """
+    print("\n[PARSE][VISIT] ===== parse_ocr_text_to_visit START =====")
+    print(f"[PARSE][VISIT] input text length: {len(text)}")
+    print("[PARSE][VISIT] input head:")
+    print(text[:500])
+
     try:
-        data = parse_visit_form_from_ocr(text)
+        raw = parse_visit_form_from_ocr(text) or {}
+        print("[PARSE][VISIT] raw dict from GPT:")
+        print(raw)
+
+        data: dict[str, str] = {}
+
+        # 병원명
+        data["hospital"] = (
+            raw.get("hospital")
+            or raw.get("hospital_name")
+            or raw.get("clinic")
+            or ""
+        )
+
+        # 의사 이름
+        data["doctor_name"] = (
+            raw.get("doctor_name")
+            or raw.get("doctor")
+            or raw.get("physician")
+            or ""
+        )
+
+        # 증상
+        data["symptom"] = (
+            raw.get("symptom")
+            or raw.get("symptoms")
+            or raw.get("chief_complaint")
+            or ""
+        )
+
+        # 소견/메모
+        data["opinion"] = (
+            raw.get("opinion")
+            or raw.get("notes")
+            or raw.get("assessment")
+            or ""
+        )
+
+        # 진단 코드 & 이름
+        data["diagnosis_code"] = (
+            raw.get("diagnosis_code")
+            or raw.get("diagnosisCode")
+            or raw.get("icd_code")
+            or ""
+        )
+        data["diagnosis_name"] = (
+            raw.get("diagnosis_name")
+            or raw.get("diagnosisName")
+            or raw.get("diagnosis")
+            or ""
+        )
+
+        # 날짜
+        data["date"] = (
+            raw.get("date")
+            or raw.get("visit_date")
+            or raw.get("visitDate")
+            or str(datetime.today().date())
+        )
+
+        print("[PARSE][VISIT] mapped data:")
+        print(data)
+        print("[PARSE][VISIT] ===== SUCCESS =====\n")
         return VisitFormSchema(**data)
-    except Exception:
-        # 실패 시 안전한 기본 구조로 반환
+
+    except Exception as e:
+        print(f"[PARSE][VISIT][ERROR] parsing failed: {e}")
         dummy = {
             "hospital": "",
             "doctor_name": "",
@@ -146,4 +217,151 @@ def parse_ocr_text_to_visit(text: str) -> VisitFormSchema:
             "diagnosis_name": "",
             "date": str(datetime.today().date()),
         }
+        print("[PARSE][VISIT] returning dummy data:")
+        print(dummy)
+        print("[PARSE][VISIT] ===== FALLBACK =====\n")
         return VisitFormSchema(**dummy)
+
+
+# ==================================================
+# OCR raw text → Prescription 구조화 (여러 약)
+# ==================================================
+def parse_ocr_text_to_prescription(text: str) -> List[PrescriptionFormSchema]:
+    """
+    OCR result text → 여러 개의 Prescription Form 자동 구조화
+    GPT는 { "medications": [ {...}, {...}, ... ] } 형태로 응답하고,
+    여기서는 그 배열을 순회하며 PrescriptionFormSchema 리스트로 변환한다.
+    """
+    print("\n[PARSE][PRESC] ===== parse_ocr_text_to_prescription START =====")
+    print(f"[PARSE][PRESC] input text length: {len(text)}")
+    print("[PARSE][PRESC] input head:")
+    print(text[:500])
+
+    try:
+        raw = parse_prescription_form_from_ocr(text) or {}
+        print("[PARSE][PRESC] raw dict from GPT:")
+        print(raw)
+
+        meds_raw = raw.get("medications", [])
+
+        # 방어 코드: dict 로 온 경우 / 아예 리스트가 아닌 경우 처리
+        if isinstance(meds_raw, dict):
+            meds_list = [meds_raw]
+        elif isinstance(meds_raw, list):
+            meds_list = meds_raw
+        else:
+            # 혹시 GPT가 옛 형식(단일 객체)으로 준 경우 대비
+            meds_list = [raw]
+
+        parsed_list: List[PrescriptionFormSchema] = []
+
+        for idx, m in enumerate(meds_list):
+            if not isinstance(m, dict):
+                print(f"[PARSE][PRESC] skip non-dict medication at index {idx}: {m}")
+                continue
+
+            data: dict[str, object] = {}
+
+            # 약 이름
+            data["med_name"] = (
+                m.get("med_name")
+                or m.get("medName")
+                or m.get("drug_name")
+                or m.get("name")
+                or ""
+            )
+
+            # 제형
+            data["dosage_form"] = (
+                m.get("dosage_form")
+                or m.get("dosageForm")
+                or m.get("form")
+                or ""
+            )
+
+            # 용량 / 단위
+            data["dose"] = (
+                m.get("dose")
+                or m.get("dose_amount")
+                or m.get("strength")
+                or ""
+            )
+            data["unit"] = m.get("unit") or m.get("dose_unit") or ""
+
+            # 복용 시간(schedule)
+            schedule = (
+                m.get("schedule")
+                or m.get("dose_times")
+                or m.get("when")
+                or []
+            )
+
+            if isinstance(schedule, str):
+                items = [s.strip() for s in schedule.split(",") if s.strip()]
+                data["schedule"] = items
+            elif isinstance(schedule, list):
+                data["schedule"] = [
+                    str(s).strip() for s in schedule if str(s).strip()
+                ]
+            else:
+                data["schedule"] = []
+
+            # 기타 복약 시간
+            data["custom_schedule"] = (
+                m.get("custom_schedule")
+                or m.get("customSchedule")
+                or m.get("etc")
+                or None
+            )
+
+            # 시작일 / 종료일
+            data["start_date"] = (
+                m.get("start_date") or m.get("startDate") or ""
+            )
+            data["end_date"] = m.get("end_date") or m.get("endDate") or ""
+
+            print(f"[PARSE][PRESC] mapped data (index {idx}):")
+            print(data)
+
+            try:
+                parsed_list.append(PrescriptionFormSchema(**data))
+            except Exception as e:
+                print(f"[PARSE][PRESC] Pydantic validation failed at index {idx}: {e}")
+
+        if not parsed_list:
+            # 아무 것도 못 만들었다면 dummy 하나라도 리턴
+            dummy = PrescriptionFormSchema(
+                med_name="",
+                dosage_form="",
+                dose="",
+                unit="",
+                schedule=[],
+                custom_schedule=None,
+                start_date="",
+                end_date="",
+            )
+            print("[PARSE][PRESC] no valid meds, returning single dummy")
+            print(dummy)
+            print("[PARSE][PRESC] ===== FALLBACK (EMPTY) =====\n")
+            return [dummy]
+
+        print(f"[PARSE][PRESC] total parsed meds: {len(parsed_list)}")
+        print("[PARSE][PRESC] ===== SUCCESS =====\n")
+        return parsed_list
+
+    except Exception as e:
+        print(f"[PARSE][PRESC][ERROR] parsing failed: {e}")
+        dummy = PrescriptionFormSchema(
+            med_name="",
+            dosage_form="",
+            dose="",
+            unit="",
+            schedule=[],
+            custom_schedule=None,
+            start_date="",
+            end_date="",
+        )
+        print("[PARSE][PRESC] returning dummy list:")
+        print(dummy)
+        print("[PARSE][PRESC] ===== FALLBACK (EXCEPTION) =====\n")
+        return [dummy]

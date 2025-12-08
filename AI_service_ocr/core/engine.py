@@ -14,7 +14,7 @@ def get_ocr_engine() -> PaddleOCR:
     """
     ocr = PaddleOCR(
         use_angle_cls=True,
-        lang="korean",   # 필요 시 "korean" → "korean" 또는 "korean" 그대로 사용
-        show_log=False,
+        lang="korean",   # 한국어 OCR
+        # show_log=False,  # ❌ 이 줄 삭제
     )
     return ocr
