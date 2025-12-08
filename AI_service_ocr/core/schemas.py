@@ -1,11 +1,10 @@
-# core/schemas.py
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional, Union
 from pydantic import BaseModel
 
 
 # ---------------------------
-# OCR Raw Result
+# OCR Raw Result (DB 저장 내용)
 # ---------------------------
 class OCRDetail(BaseModel):
     ocr_id: int
@@ -19,7 +18,7 @@ class OCRDetail(BaseModel):
     completed_at: Optional[datetime]
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # ---------------------------
@@ -30,20 +29,48 @@ class OCRParseRequest(BaseModel):
 
 
 # ---------------------------
-# Visit / Prescription 폼 자동입력 스키마
+# Visit Form Schema
 # ---------------------------
 class VisitFormSchema(BaseModel):
-    hospital: Optional[str]
-    doctor_name: Optional[str]
-    symptom: Optional[str]
-    opinion: Optional[str]
-    diagnosis_code: Optional[str]
-    diagnosis_name: Optional[str]
-    date: Optional[str]
+    hospital: Optional[str] = ""
+    doctor_name: Optional[str] = ""
+    symptom: Optional[str] = ""
+    opinion: Optional[str] = ""
+    diagnosis_code: Optional[str] = ""
+    diagnosis_name: Optional[str] = ""
+    date: Optional[str] = ""
 
 
 # ---------------------------
-# Chatbot OCR 응답 (선택)
+# Prescription Form Schema
+# ---------------------------
+class PrescriptionFormSchema(BaseModel):
+    med_name: str = ""
+    dosage_form: str = ""
+    dose: str = ""
+    unit: str = ""
+    schedule: List[str] = []
+    custom_schedule: Optional[str] = None
+    start_date: str = ""
+    end_date: str = ""
+
+    class Config:
+        from_attributes = True
+
+
+# ---------------------------
+# 통합 OCR + 구조화 응답
+# ---------------------------
+class OCRAnalyzeResponse(BaseModel):
+    status: str
+    source_type: str
+    raw_text: str
+    parsed: Optional[Union[VisitFormSchema, PrescriptionFormSchema]] = None
+    job_id: int
+
+
+# ---------------------------
+# Chatbot OCR 응답
 # ---------------------------
 class ChatbotAnswer(BaseModel):
     chat_id: int
@@ -52,11 +79,11 @@ class ChatbotAnswer(BaseModel):
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class ChatbotOCRResponse(BaseModel):
     ocr_id: int
     text: str
     status: str
-    chat: Optional[ChatbotAnswer]
+    chat: Optional[ChatbotAnswer] = None

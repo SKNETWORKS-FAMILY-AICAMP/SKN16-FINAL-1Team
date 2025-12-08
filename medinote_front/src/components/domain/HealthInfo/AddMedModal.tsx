@@ -20,7 +20,9 @@ import {
   createPrescription,
   type PrescriptionItem,
 } from "../../../api/prescriptionAPI";
-import { API_BASE_URL } from "../../../utils/config";
+import {
+  OCR_API_BASE_URL, // 🔹 OCR 서버(8003)
+} from "../../../utils/config";
 
 type Step = "selectType" | "fillForm";
 type MedType = "prescription" | "supplement";
@@ -48,12 +50,17 @@ type PrescriptionParsedResponse = {
   end_date?: string | null;
 };
 
-type OcrAnalyzeResponse = {
-  status: string;
+// 🔹 1차 OCR 응답 타입 (백엔드 /prescriptions/{id}/ocr 스펙)
+type PrescriptionOcrJobResponse = {
+  ocr_id: number;
+  file_id: number;
+  user_id: number;
   source_type: string;
-  raw_text: string;
-  parsed: PrescriptionParsedResponse;
-  job_id?: number;
+  status: string;
+  text: string;
+  visit_id: number | null;
+  created_at: string;
+  completed_at: string | null;
 };
 
 type ModalProps = {
@@ -63,10 +70,6 @@ type ModalProps = {
 };
 
 const SCHEDULE_OPTIONS = ["아침", "점심", "저녁", "취침전", "증상시", "기타"];
-
-const OCR_API_BASE = (
-  (import.meta.env.VITE_OCR_API_URL as string | undefined) ?? API_BASE_URL
-).replace(/\/$/, "");
 
 export default function AddMedModal({
   onClose,
@@ -248,29 +251,67 @@ export default function AddMedModal({
 
     setOcrStep("scanning");
 
-    const payload = new FormData();
-    payload.append("file", ocrFile);
-    payload.append("source_type", "prescription");
-
     try {
-      const resp = await fetch(`${OCR_API_BASE}/ocr/analyze`, {
-        method: "POST",
-        body: payload,
-      });
+      // 🔹 TODO: 실제 처방전 ID 로 교체 필요
+      const prescriptionId = 1;
 
-      if (!resp.ok) {
+      // 🔹 1) 첫 번째 요청: 파일 업로드 + OCR 실행  (→ OCR 서버 8003)
+      const uploadForm = new FormData();
+      uploadForm.append("file", ocrFile);
+
+      const uploadResp = await fetch(
+        `${OCR_API_BASE_URL}/prescriptions/${prescriptionId}/ocr`,
+        {
+          method: "POST",
+          body: uploadForm,
+        }
+      );
+
+      if (!uploadResp.ok) {
         let detail = "";
         try {
-          const errorBody = await resp.json();
-          detail = errorBody?.detail ?? "";
+          const errBody = await uploadResp.json();
+          detail = errBody?.detail ?? "";
         } catch {
           detail = "";
         }
-        throw new Error(detail || `OCR 요청 실패 (${resp.status})`);
+        throw new Error(detail || `처방 OCR 업로드 실패 (${uploadResp.status})`);
       }
 
-      const data = (await resp.json()) as OcrAnalyzeResponse;
-      const parsed = data?.parsed || {};
+      const uploadData =
+        (await uploadResp.json()) as PrescriptionOcrJobResponse;
+
+      // 🔹 OCR 결과가 비어 있으면 파싱까지 가지 않고 종료
+      if (!uploadData.text?.trim()) {
+        toast.error("OCR 결과 텍스트가 비어 있습니다. 이미지를 다시 확인해 주세요.");
+        setOcrStep("preview");
+        return;
+      }
+
+      // 🔹 2) 두 번째 요청: OCR 텍스트를 GPT로 파싱하는 API 호출 (→ OCR 서버 8003)
+      const parseResp = await fetch(
+        `${OCR_API_BASE_URL}/prescriptions/${prescriptionId}/ocr/parse`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ text: uploadData.text }),
+        }
+      );
+
+      if (!parseResp.ok) {
+        let detail = "";
+        try {
+          const errBody = await parseResp.json();
+          detail = errBody?.detail ?? "";
+        } catch {
+          detail = "";
+        }
+        throw new Error(detail || `처방 OCR 파싱 실패 (${parseResp.status})`);
+      }
+
+      const parsed = (await parseResp.json()) as PrescriptionParsedResponse;
 
       if (!hasParsedValues(parsed)) {
         toast.error("인식된 처방 정보가 없습니다. 이미지를 다시 확인해 주세요.");
@@ -282,7 +323,7 @@ export default function AddMedModal({
       setOcrStep("complete");
       toast.success("OCR 결과가 적용되었습니다.");
     } catch (err) {
-      console.error("OCR analyze error:", err);
+      console.error("처방 OCR 처리 오류:", err);
       toast.error("OCR 처리 중 오류가 발생했습니다.");
       setOcrStep("preview");
     }
@@ -292,6 +333,8 @@ export default function AddMedModal({
     resetOcrSelection();
     setOcrStep("selectMethod");
   };
+
+  // 이하 JSX / 나머지 함수는 그대로 …
 
   if (step === "selectType") {
     return (
