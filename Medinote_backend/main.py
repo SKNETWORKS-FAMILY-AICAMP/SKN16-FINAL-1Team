@@ -1,4 +1,5 @@
 # main.py
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import Base, engine
@@ -23,9 +24,21 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
+# CORS 허용 origins 설정
+cors_origins = [
+    "http://localhost:5173",
+    "http://10.0.2.2:5173",
+    "http://localhost:4173",
+]
+
+# 환경변수에서 FRONTEND_URL 추가
+frontend_url = os.getenv("FRONTEND_URL")
+if frontend_url:
+    cors_origins.append(frontend_url)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://10.0.2.2:5173"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -48,22 +48,18 @@ services:
       - "8002:8002"
     restart: unless-stopped
 
-  # 🔥 새로 추가: OCR 서비스
   ocr:
     build:
-      context: ./AI_service_ocr          # 여기 Dockerfile 사용
+      context: ./AI_service_ocr
     container_name: medinote_ocr
     environment:
-      # database.py 에서 요구하는 DATABASE_URL (db 서비스와 연결)
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/medinote
-      # 필요하면 여기에 BACKEND_URL 등도 추가 가능
-      # BACKEND_URL: http://backend:8000
+      FRONTEND_URL: ${FRONTEND_URL}
+      BACKEND_URL: http://backend:8000
     depends_on:
       db:
-      # db가 살아난 뒤에 OCR 컨테이너 시작
         condition: service_healthy
     volumes:
-      # OCR 업로드 파일을 호스트에 남기고 싶으면 (경로는 원하는 대로 수정)
       - /home/ubuntu/ocr_uploads:/app/uploads/ocr
     ports:
       - "8003:8003"
@@ -82,7 +78,6 @@ services:
       - "4173:4173"
     restart: unless-stopped
 
-  # 🔥 LLM 서비스
   llm:
     build:
       context: ./AI_service_LLM
@@ -92,6 +87,7 @@ services:
       CHROMA_DB_DIR: ${CHROMA_DB_DIR}
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/medinote
       BACKEND_URL: http://backend:8000
+      FRONTEND_URL: ${FRONTEND_URL}
     volumes:
       - /home/ubuntu/chroma_db:/app/chroma_db
     ports:

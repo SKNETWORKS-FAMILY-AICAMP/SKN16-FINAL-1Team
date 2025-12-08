@@ -140,10 +140,13 @@ app = FastAPI(title="MediNote AI LLM Service", version="0.2.0")
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "http://192.168.0.10:5173",
-    "http://192.168.0.11:5173",
-    "http://3.38.79.4:4173",      # EC2 프론트엔드 추가
+    "http://localhost:4173",
 ]
+
+# 환경변수에서 FRONTEND_URL 추가
+frontend_url = os.getenv("FRONTEND_URL")
+if frontend_url:
+    origins.append(frontend_url)
 
 app.add_middleware(
     CORSMiddleware,
