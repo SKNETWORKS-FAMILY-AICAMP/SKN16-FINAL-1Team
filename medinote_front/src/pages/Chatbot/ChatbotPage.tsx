@@ -226,16 +226,13 @@ export default function ChatbotPage() {
           <HiOutlineChatAlt2 className="text-mint text-2xl" />
           <div className="flex-1 min-w-0">
             <h2 className="text-xl font-bold text-dark-gray truncate">
-              AI 건강 챗봇
+              {current?.title || "새 대화"}
             </h2>
-            <p className="text-xs text-gray-500 truncate">
-              {current?.title || "대화 내역을 선택해 주세요"}
-            </p>
           </div>
         </button>
       </header>
 
-      <div className="flex bg-white rounded-lg shadow-lg h-[calc(100vh-230px)] relative overflow-hidden">
+      <div className="flex bg-white rounded-lg shadow-lg h-[calc(100vh-180px)] relative overflow-hidden">
         <ChatSidebar
           isOpen={isChatListOpen}
           onClose={toggleChatList}
@@ -456,7 +453,7 @@ function ChatWindow({ chat, onSend }: ChatWindowProps) {
         </div>
       ) : null}
 
-      <div className="p-3 border-t bg-white">
+      <div className="p-3 bg-white">
         <div className="flex items-center gap-2 border rounded-lg p-2 bg-gray-50">
           <button
             onClick={() => fileInputRef.current?.click()}
