@@ -5,7 +5,7 @@ import os
 import uuid
 import shutil
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
@@ -224,12 +224,13 @@ def parse_ocr_text_to_visit(text: str) -> VisitFormSchema:
 
 
 # ==================================================
-# OCR raw text → Prescription 구조화
+# OCR raw text → Prescription 구조화 (여러 약)
 # ==================================================
-def parse_ocr_text_to_prescription(text: str) -> PrescriptionFormSchema:
+def parse_ocr_text_to_prescription(text: str) -> List[PrescriptionFormSchema]:
     """
-    OCR result text → Prescription Form 자동 구조화
-    GPT가 camelCase / 다양한 키로 줘도 스키마에 맞게 매핑
+    OCR result text → 여러 개의 Prescription Form 자동 구조화
+    GPT는 { "medications": [ {...}, {...}, ... ] } 형태로 응답하고,
+    여기서는 그 배열을 순회하며 PrescriptionFormSchema 리스트로 변환한다.
     """
     print("\n[PARSE][PRESC] ===== parse_ocr_text_to_prescription START =====")
     print(f"[PARSE][PRESC] input text length: {len(text)}")
@@ -241,84 +242,126 @@ def parse_ocr_text_to_prescription(text: str) -> PrescriptionFormSchema:
         print("[PARSE][PRESC] raw dict from GPT:")
         print(raw)
 
-        data: dict[str, object] = {}
+        meds_raw = raw.get("medications", [])
 
-        # 약 이름
-        data["med_name"] = (
-            raw.get("med_name")
-            or raw.get("medName")
-            or raw.get("drug_name")
-            or raw.get("name")
-            or ""
-        )
-
-        # 제형
-        data["dosage_form"] = (
-            raw.get("dosage_form")
-            or raw.get("dosageForm")
-            or raw.get("form")
-            or ""
-        )
-
-        # 용량 / 단위
-        data["dose"] = (
-            raw.get("dose")
-            or raw.get("dose_amount")
-            or raw.get("strength")
-            or ""
-        )
-        data["unit"] = raw.get("unit") or raw.get("dose_unit") or ""
-
-        # 복용 시간(schedule)
-        schedule = (
-            raw.get("schedule")
-            or raw.get("dose_times")
-            or raw.get("when")
-            or []
-        )
-
-        if isinstance(schedule, str):
-            items = [s.strip() for s in schedule.split(",") if s.strip()]
-            data["schedule"] = items
-        elif isinstance(schedule, list):
-            data["schedule"] = [
-                str(s).strip() for s in schedule if str(s).strip()
-            ]
+        # 방어 코드: dict 로 온 경우 / 아예 리스트가 아닌 경우 처리
+        if isinstance(meds_raw, dict):
+            meds_list = [meds_raw]
+        elif isinstance(meds_raw, list):
+            meds_list = meds_raw
         else:
-            data["schedule"] = []
+            # 혹시 GPT가 옛 형식(단일 객체)으로 준 경우 대비
+            meds_list = [raw]
 
-        # 기타 복약 시간
-        data["custom_schedule"] = (
-            raw.get("custom_schedule")
-            or raw.get("customSchedule")
-            or raw.get("etc")
-            or None
-        )
+        parsed_list: List[PrescriptionFormSchema] = []
 
-        # 시작일 / 종료일
-        data["start_date"] = (
-            raw.get("start_date") or raw.get("startDate") or ""
-        )
-        data["end_date"] = raw.get("end_date") or raw.get("endDate") or ""
+        for idx, m in enumerate(meds_list):
+            if not isinstance(m, dict):
+                print(f"[PARSE][PRESC] skip non-dict medication at index {idx}: {m}")
+                continue
 
-        print("[PARSE][PRESC] mapped data:")
-        print(data)
+            data: dict[str, object] = {}
+
+            # 약 이름
+            data["med_name"] = (
+                m.get("med_name")
+                or m.get("medName")
+                or m.get("drug_name")
+                or m.get("name")
+                or ""
+            )
+
+            # 제형
+            data["dosage_form"] = (
+                m.get("dosage_form")
+                or m.get("dosageForm")
+                or m.get("form")
+                or ""
+            )
+
+            # 용량 / 단위
+            data["dose"] = (
+                m.get("dose")
+                or m.get("dose_amount")
+                or m.get("strength")
+                or ""
+            )
+            data["unit"] = m.get("unit") or m.get("dose_unit") or ""
+
+            # 복용 시간(schedule)
+            schedule = (
+                m.get("schedule")
+                or m.get("dose_times")
+                or m.get("when")
+                or []
+            )
+
+            if isinstance(schedule, str):
+                items = [s.strip() for s in schedule.split(",") if s.strip()]
+                data["schedule"] = items
+            elif isinstance(schedule, list):
+                data["schedule"] = [
+                    str(s).strip() for s in schedule if str(s).strip()
+                ]
+            else:
+                data["schedule"] = []
+
+            # 기타 복약 시간
+            data["custom_schedule"] = (
+                m.get("custom_schedule")
+                or m.get("customSchedule")
+                or m.get("etc")
+                or None
+            )
+
+            # 시작일 / 종료일
+            data["start_date"] = (
+                m.get("start_date") or m.get("startDate") or ""
+            )
+            data["end_date"] = m.get("end_date") or m.get("endDate") or ""
+
+            print(f"[PARSE][PRESC] mapped data (index {idx}):")
+            print(data)
+
+            try:
+                parsed_list.append(PrescriptionFormSchema(**data))
+            except Exception as e:
+                print(f"[PARSE][PRESC] Pydantic validation failed at index {idx}: {e}")
+
+        if not parsed_list:
+            # 아무 것도 못 만들었다면 dummy 하나라도 리턴
+            dummy = PrescriptionFormSchema(
+                med_name="",
+                dosage_form="",
+                dose="",
+                unit="",
+                schedule=[],
+                custom_schedule=None,
+                start_date="",
+                end_date="",
+            )
+            print("[PARSE][PRESC] no valid meds, returning single dummy")
+            print(dummy)
+            print("[PARSE][PRESC] ===== FALLBACK (EMPTY) =====\n")
+            return [dummy]
+
+        print(f"[PARSE][PRESC] total parsed meds: {len(parsed_list)}")
         print("[PARSE][PRESC] ===== SUCCESS =====\n")
-        return PrescriptionFormSchema(**data)
+        return parsed_list
 
     except Exception as e:
         print(f"[PARSE][PRESC][ERROR] parsing failed: {e}")
-        dummy = {
-            "med_name": "",
-            "dosage_form": "",
-            "dose": "",
-            "unit": "",
-            "schedule": [],
-            "custom_schedule": None,
-            "start_date": "",
-            "end_date": "",
-        }
-        print("[PARSE][PRESC] returning dummy data:")
+        dummy = PrescriptionFormSchema(
+            med_name="",
+            dosage_form="",
+            dose="",
+            unit="",
+            schedule=[],
+            custom_schedule=None,
+            start_date="",
+            end_date="",
+        )
+        print("[PARSE][PRESC] returning dummy list:")
         print(dummy)
-        print("[PARSE][PRESC] ===== FALLBACK =====\n")
-        return PrescriptionFormSchema(**dummy)
+        print("[PARSE][PRESC] ===== FALLBACK (EXCEPTION) =====\n")
+        return [dummy]

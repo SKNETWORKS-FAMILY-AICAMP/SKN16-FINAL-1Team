@@ -39,7 +39,8 @@ type MedForm = {
   endDate: string;
 };
 
-type PrescriptionParsedResponse = {
+// 🔹 서버에서 약 1개를 표현하는 형태 (여러 개가 배열로 옴)
+type PrescriptionParsedItem = {
   med_name?: string;
   dosage_form?: string;
   dose?: string;
@@ -82,6 +83,15 @@ export default function AddMedModal({
   const [ocrFile, setOcrFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
 
+  // 🔹 파싱된 여러 약 목록
+  const [parsedMeds, setParsedMeds] = useState<PrescriptionParsedItem[] | null>(
+    null
+  );
+  // 🔹 지금 폼에 표시 중인 약 인덱스
+  const [selectedMedIndex, setSelectedMedIndex] = useState<number>(0);
+  // 🔹 “선택됨” 상태인 약 인덱스들 (여러 개 가능)
+  const [activeMedIndexes, setActiveMedIndexes] = useState<number[]>([]);
+
   const [formData, setFormData] = useState<MedForm>({
     name: "",
     dosageForm: "정제",
@@ -97,6 +107,9 @@ export default function AddMedModal({
     if (imagePreview) URL.revokeObjectURL(imagePreview);
     setImagePreview(null);
     setOcrFile(null);
+    setParsedMeds(null);
+    setSelectedMedIndex(0);
+    setActiveMedIndexes([]);
   };
 
   const handleChange = (
@@ -116,28 +129,46 @@ export default function AddMedModal({
     });
   };
 
+  // 🔹 여기부터 전체 수정된 handleSubmit
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
 
-    if (!formData.name.trim()) {
-      toast.error("약 이름을 입력해 주세요.");
-      return;
-    }
+    const isMultiOcrMode =
+      medType === "prescription" &&
+      parsedMeds &&
+      parsedMeds.length > 0 &&
+      activeMedIndexes.length > 0;
 
-    const selectedOptions = formData.schedule.filter((s) => s !== "기타");
-    const custom = formData.schedule.includes("기타")
-      ? formData.customSchedule.trim()
-      : "";
+    // 1) OCR 여러 약 모드가 아니면 → 기존 단일 입력 검증
+    if (!isMultiOcrMode) {
+      if (!formData.name.trim()) {
+        toast.error("약 이름을 입력해 주세요.");
+        return;
+      }
 
-    if (formData.schedule.includes("기타") && !custom) {
-      toast.error("기타 복용 시간의 세부 내용을 입력해 주세요.");
-      return;
+      const selectedOptions = formData.schedule.filter((s) => s !== "기타");
+      const custom = formData.schedule.includes("기타")
+        ? formData.customSchedule.trim()
+        : "";
+
+      if (formData.schedule.includes("기타") && !custom) {
+        toast.error("기타 복용 시간의 세부 내용을 입력해 주세요.");
+        return;
+      }
     }
 
     try {
-      let newMed: Medication;
+      const newMeds: Medication[] = [];
 
       if (medType === "supplement") {
+        // ========================
+        // 영양제는 항상 1개만 등록
+        // ========================
+        const selectedOptions = formData.schedule.filter((s) => s !== "기타");
+        const custom = formData.schedule.includes("기타")
+          ? formData.customSchedule.trim()
+          : "";
+
         const res = await createDrug({
           med_name: formData.name,
           dosage_form: formData.dosageForm,
@@ -149,35 +180,80 @@ export default function AddMedModal({
           end_date: formData.endDate,
         });
 
-        newMed = mapDrugToMedication(res, "supplement");
+        newMeds.push(mapDrugToMedication(res, "supplement"));
       } else {
-        const visitId = 1;
+        // ========================
+        // 처방약
+        // ========================
+        const visitId = 1; // TODO: 실제 visitId 로 교체
 
-        const res = await createPrescription(visitId, {
-          med_name: formData.name,
-          dosageForm: formData.dosageForm,
-          dose: formData.dose,
-          unit: formData.unit,
-          schedule: selectedOptions,
-          customSchedule: custom || null,
-          startDate: formData.startDate,
-          endDate: formData.endDate,
-        });
+        if (isMultiOcrMode && parsedMeds) {
+          // 🔹 OCR로 인식된 여러 약 중, activeMedIndexes 에 포함된 애들만 등록
+          const targets = activeMedIndexes
+            .map((i) => parsedMeds[i])
+            .filter((p): p is PrescriptionParsedItem => !!p);
 
-        newMed = mapPrescriptionToMedication(res);
+          for (const p of targets) {
+            // parsed → 폼 형태로 정규화
+            const merged = mapParsedToForm(p, formData);
+
+            const selectedOptions = merged.schedule.filter((s) => s !== "기타");
+            const custom = merged.schedule.includes("기타")
+              ? merged.customSchedule.trim()
+              : "";
+
+            const res = await createPrescription(visitId, {
+              med_name: merged.name,
+              dosageForm: merged.dosageForm,
+              dose: merged.dose,
+              unit: merged.unit,
+              schedule: selectedOptions,
+              customSchedule: custom || null,
+              startDate: merged.startDate,
+              endDate: merged.endDate,
+            });
+
+            newMeds.push(mapPrescriptionToMedication(res));
+          }
+        } else {
+          // 🔹 OCR 안 쓰거나, 단일 약만 직접 입력하는 경우 → 기존 로직
+          const selectedOptions = formData.schedule.filter((s) => s !== "기타");
+          const custom = formData.schedule.includes("기타")
+            ? formData.customSchedule.trim()
+            : "";
+
+          const res = await createPrescription(visitId, {
+            med_name: formData.name,
+            dosageForm: formData.dosageForm,
+            dose: formData.dose,
+            unit: formData.unit,
+            schedule: selectedOptions,
+            customSchedule: custom || null,
+            startDate: formData.startDate,
+            endDate: formData.endDate,
+          });
+
+          newMeds.push(mapPrescriptionToMedication(res));
+        }
       }
 
+      // 🔹 생성된 약들을 한 번에 store 에 추가
       useHealthDataStore.setState((state) => ({
-        medications: [...state.medications, newMed],
+        medications: [...state.medications, ...newMeds],
       }));
 
-      toast.success("복약 정보가 추가되었습니다.");
+      toast.success(
+        newMeds.length > 1
+          ? `${newMeds.length}개의 약이 추가되었습니다.`
+          : "복약 정보가 추가되었습니다."
+      );
       onClose();
     } catch (err) {
       console.error("약 추가 실패:", err);
       toast.error("약 추가에 실패했습니다.");
     }
   };
+  // 🔹 handleSubmit 끝
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -201,7 +277,7 @@ export default function AddMedModal({
     return "정제";
   };
 
-  const hasParsedValues = (parsed: PrescriptionParsedResponse) => {
+  const hasParsedValues = (parsed: PrescriptionParsedItem) => {
     const scheduleCount = Array.isArray(parsed.schedule)
       ? parsed.schedule.filter(Boolean).length
       : 0;
@@ -218,7 +294,7 @@ export default function AddMedModal({
   };
 
   const mapParsedToForm = (
-    parsed: PrescriptionParsedResponse,
+    parsed: PrescriptionParsedItem,
     prev: MedForm
   ): MedForm => {
     const schedule = Array.isArray(parsed.schedule)
@@ -252,10 +328,8 @@ export default function AddMedModal({
     setOcrStep("scanning");
 
     try {
-      // 🔹 TODO: 실제 처방전 ID 로 교체 필요
       const prescriptionId = 1;
 
-      // 🔹 1) 첫 번째 요청: 파일 업로드 + OCR 실행  (→ OCR 서버 8003)
       const uploadForm = new FormData();
       uploadForm.append("file", ocrFile);
 
@@ -281,14 +355,12 @@ export default function AddMedModal({
       const uploadData =
         (await uploadResp.json()) as PrescriptionOcrJobResponse;
 
-      // 🔹 OCR 결과가 비어 있으면 파싱까지 가지 않고 종료
       if (!uploadData.text?.trim()) {
         toast.error("OCR 결과 텍스트가 비어 있습니다. 이미지를 다시 확인해 주세요.");
         setOcrStep("preview");
         return;
       }
 
-      // 🔹 2) 두 번째 요청: OCR 텍스트를 GPT로 파싱하는 API 호출 (→ OCR 서버 8003)
       const parseResp = await fetch(
         `${OCR_API_BASE_URL}/prescriptions/${prescriptionId}/ocr/parse`,
         {
@@ -311,17 +383,33 @@ export default function AddMedModal({
         throw new Error(detail || `처방 OCR 파싱 실패 (${parseResp.status})`);
       }
 
-      const parsed = (await parseResp.json()) as PrescriptionParsedResponse;
+      const raw = await parseResp.json();
+      const list: PrescriptionParsedItem[] = Array.isArray(raw)
+        ? (raw as PrescriptionParsedItem[])
+        : [raw as PrescriptionParsedItem];
 
-      if (!hasParsedValues(parsed)) {
+      const validMeds = list.filter(hasParsedValues);
+
+      if (!validMeds.length) {
         toast.error("인식된 처방 정보가 없습니다. 이미지를 다시 확인해 주세요.");
         setOcrStep("preview");
         return;
       }
 
-      setFormData((prev) => mapParsedToForm(parsed, prev));
+      setParsedMeds(validMeds);
+
+      // 🔹 약이 N개라면 0..N-1 전부 “선택된 상태”로 세팅
+      const allIndexes = validMeds.map((_, idx) => idx);
+      setActiveMedIndexes(allIndexes);
+
+      setSelectedMedIndex(0);
+      setFormData((prev) => mapParsedToForm(validMeds[0], prev));
       setOcrStep("complete");
-      toast.success("OCR 결과가 적용되었습니다.");
+      toast.success(
+        validMeds.length > 1
+          ? `OCR 결과가 적용되었습니다. (${validMeds.length}개 약 인식)`
+          : "OCR 결과가 적용되었습니다."
+      );
     } catch (err) {
       console.error("처방 OCR 처리 오류:", err);
       toast.error("OCR 처리 중 오류가 발생했습니다.");
@@ -334,7 +422,16 @@ export default function AddMedModal({
     setOcrStep("selectMethod");
   };
 
-  // 이하 JSX / 나머지 함수는 그대로 …
+  const handleSelectParsedMed = (index: number) => {
+    if (!parsedMeds || !parsedMeds[index]) return;
+
+    setActiveMedIndexes((prev) =>
+      prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index]
+    );
+
+    setSelectedMedIndex(index);
+    setFormData((prev) => mapParsedToForm(parsedMeds[index], prev));
+  };
 
   if (step === "selectType") {
     return (
@@ -493,15 +590,44 @@ export default function AddMedModal({
           )}
 
           {ocrStep === "complete" && (
-            <div className="h-24 flex flex-col items-center justify-center">
+            <div className="h-auto flex flex-col items-center justify-center">
               <HiOutlineCheckCircle className="text-4xl text-green-500 mb-3" />
-              <p className="text-sm text-dark-gray font-semibold">
+              <p className="text-sm text-dark-gray font-semibold mb-2">
                 스캔 완료! 내용을 확인해 주세요.
               </p>
+
+              {parsedMeds && parsedMeds.length > 0 && (
+                <div className="w-full mt-2">
+                  <p className="text-xs text-gray-600 mb-1">
+                    인식된 약을 선택하면 아래 폼에 자동으로 채워집니다.
+                  </p>
+                  <div className="flex flex-wrap gap-2 justify-center">
+                    {parsedMeds.map((m, idx) => {
+                      const label = m.med_name?.trim() || `약 ${idx + 1}`;
+                      const isActive = activeMedIndexes.includes(idx);
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => handleSelectParsedMed(idx)}
+                          className={`px-3 py-1 rounded-full text-xs border ${
+                            isActive
+                              ? "bg-mint text-white border-mint"
+                              : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <button
                 type="button"
                 onClick={handleScanAgain}
-                className="text-xs text-mint hover:underline mt-1"
+                className="text-xs text-mint hover:underline mt-2"
               >
                 다시 스캔하기
               </button>

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import List
+
 from fastapi import APIRouter, UploadFile, File, Form, Depends
 from sqlalchemy.orm import Session
 
@@ -93,7 +95,7 @@ async def upload_prescription_ocr(
 
 @prescription_ocr_router.post(
     "/{prescription_id}/ocr/parse",
-    response_model=PrescriptionFormSchema,
+    response_model=list[PrescriptionFormSchema],
 )
 async def parse_prescription(
     prescription_id: int,
@@ -102,8 +104,8 @@ async def parse_prescription(
 ):
     """
     OCR raw text(payload.text)를 GPT에 넣어서
-    PrescriptionFormSchema(med_name, dosage_form, dose, unit, schedule, custom_schedule,
-    start_date, end_date) 구조로 변환.
+    여러 개의 PrescriptionFormSchema 리스트로 변환해 반환한다.
+    (여러 약을 한 번에 인식하는 용도)
     """
     return parse_ocr_text_to_prescription(payload.text)
 

@@ -101,7 +101,6 @@ def parse_visit_form_from_ocr(text: str) -> Dict[str, Any]:
         parsed = json.loads(content)
     except Exception as e:
         print(f"[GPT][VISIT][ERROR] json.loads failed: {e}")
-        # 그대로 예외를 올려서 crud 쪽 except에서 dummy 생성
         raise
 
     print(f"[GPT][VISIT] parsed keys: {list(parsed.keys())}")
@@ -119,13 +118,34 @@ PRESCRIPTION_SYSTEM_PROMPT = """
 입력으로는 줄바꿈/오타/불필요한 정보(주소, 전화번호, 병원 안내문 등)가 섞인
 처방전 또는 약봉투의 전체 텍스트가 들어온다.
 
-이 텍스트를 기반으로 **하나의 대표 약** 정보를 골라서
-다음 필드를 가진 JSON 객체 하나만 반환해라:
+이 텍스트를 기반으로 **하나의 JSON 객체**를 반환해야 한다.
+그 객체 안에는 "medications" 라는 키가 있고,
+그 값은 하나 이상의 약 정보를 담고 있는 배열이어야 한다.
+
+반환 형식(최상위 JSON):
+
+{
+  "medications": [
+    {
+      "med_name": "...",
+      "dosage_form": "...",
+      "dose": "...",
+      "unit": "...",
+      "schedule": [...],
+      "custom_schedule": ...,
+      "start_date": "...",
+      "end_date": "..."
+    },
+    ...
+  ]
+}
+
+각 medications[i] 객체는 다음 필드를 가진다:
 
 - med_name         : 약 이름 (예: "글루코파지정 500mg")
 - dosage_form      : 제형 (예: "정제", "캡슐", "시럽" 등)
-- dose             : 1회 투여량 숫자 또는 문자열 (예: "500")
-- unit             : 용량 단위 (예: "mg", "mcg", "g", "mL", "%")
+- dose             : 1회 투여량 숫자 또는 문자열 (예: "500", "1")
+- unit             : 용량 단위 (예: "mg", "mcg", "g", "mL", "%", "정" 등)
 - schedule         : 복용 시점의 배열
                      예) ["아침"], ["아침", "저녁"], ["아침", "점심", "저녁"], ["취침전"], ["증상시"]
 - custom_schedule  : 위 기본 시점으로 표현하기 어려운 추가 설명(없으면 null)
@@ -134,25 +154,28 @@ PRESCRIPTION_SYSTEM_PROMPT = """
 - end_date         : 복용 종료일. 알 수 있으면 "YYYY-MM-DD", 없으면 "".
 
 규칙:
-1. 최종 출력은 반드시 JSON 객체 하나만 있어야 한다. 그 외 문장은 절대 넣지 마.
-2. 필드를 전부 포함해야 하며, 모르면 아래처럼 처리한다:
+1. 최종 출력은 반드시 JSON 객체 한 개여야 하고,
+   그 안에 "medications": [...] 배열이 포함되어야 한다.
+   다른 설명 문장이나 자연어는 절대 넣지 마.
+2. "medications"는 최소 1개 이상의 약 정보를 포함해야 한다.
+3. 필드를 전부 포함해야 하며, 모르면 아래처럼 처리한다:
    - 문자열 필드: "" (빈 문자열)
    - 배열 필드: []
    - custom_schedule: 값이 없으면 null
-3. 처방전/약봉투에 여러 약이 있어도,
-   - 가장 대표적인 주약(예: 첫 번째로 나오는 당뇨약 등) 1개만 골라서 채운다.
-4. med_name:
+4. 처방전/약봉투에 여러 약이 있으면,
+   - 가능한 한 모든 주요 약을 "medications" 배열에 넣되, 너무 애매한 정보는 생략해도 된다.
+5. med_name:
    - 상품명 + 함량이 같이 적혀 있으면 가능한 그대로 사용한다.
      예: "글루코파지정 500mg", "자누비아정 100mg"
-5. dosage_form:
+6. dosage_form:
    - OCR 텍스트에서 "정", "정제", "캡슐", "연질캡슐", "시럽", "현탁액" 등을 보고 알맞게 선택한다.
    - 확실하지 않으면 "" 대신 텍스트에서 가장 유력한 제형을 심플하게 한 단어로 정리한다.
-6. dose / unit:
+7. dose / unit:
    - "500mg", "1정", "1정(500mg)" 같이 적혀 있으면
      - dose: "500" 또는 "1" 같은 핵심 숫자
      - unit: "mg" 또는 "정" 등 단위를 넣는다.
    - 모호하면 "dose"는 "", "unit"도 ""로 둔다.
-7. schedule:
+8. schedule:
    - 텍스트를 읽고 가능한 한 ["아침", "점심", "저녁", "취침전", "증상시"] 중에서 골라 배열로 구성한다.
    - 예시 매핑:
      - "아침, 저녁 식후"  → ["아침", "저녁"]
@@ -160,11 +183,11 @@ PRESCRIPTION_SYSTEM_PROMPT = """
      - "필요 시"         → ["증상시"]
      - "취침 전"         → ["취침전"]
    - 시점이 전혀 보이지 않으면 []로 둔다.
-8. custom_schedule:
+9. custom_schedule:
    - 보다 구체적인 설명을 담는다.
    - 예: "식후 30분", "매일 같은 시간 1정", "필요 시 1회 200mL를 여러 번"
    - 없다면 null로 둔다.
-9. start_date / end_date:
+10. start_date / end_date:
    - "조제일자", "처방일자", "투약기간" 등에서 날짜를 찾고 가능하면 "YYYY-MM-DD"로 변환한다.
    - 연/월/일이 명확하지 않으면 ""로 둔다.
 """
@@ -197,7 +220,6 @@ def parse_prescription_form_from_ocr(text: str) -> Dict[str, Any]:
         parsed = json.loads(content)
     except Exception as e:
         print(f"[GPT][PRESC][ERROR] json.loads failed: {e}")
-        # crud 쪽에서 dummy 처리하게 예외 그대로 올림
         raise
 
     print(f"[GPT][PRESC] parsed keys: {list(parsed.keys())}")
