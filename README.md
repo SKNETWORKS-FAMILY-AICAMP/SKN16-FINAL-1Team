@@ -19,8 +19,9 @@ MediNote는 바쁜 현대인들이 자신의 건강 정보를 쉽고 편리하�
 ### 2. 진료 기록 관리
 - 진료 기록 직접 입력
 - **음성 녹음 → STT 변환 → AI 요약** (Whisper + GPT)
-- **처방전 OCR** → 약 정보 자동 추출 (예정)
-
+- **처방전 OCR** → 약 정보 자동 추출
+- **진료내역 OCR** → 진료내역서 내용 추출
+ 
 ### 3. AI 건강 챗봇
 - RAG 기반 맞춤형 건강 상담
 - 사용자 건강 정보 연동 답변
@@ -29,6 +30,7 @@ MediNote는 바쁜 현대인들이 자신의 건강 정보를 쉽고 편리하�
 ### 4. 건강 분석
 - 복약 현황 시각화
 - 건강 데이터 통계
+
 
 ## 기술 스택
 
@@ -77,33 +79,41 @@ MediNote는 바쁜 현대인들이 자신의 건강 정보를 쉽고 편리하�
 
 ```
 SKN16-FINAL-1Team/
-├── medinote_front/          # React 프론트엔드
+├── medinote_front/                  # React 프론트엔드 (웹 UI)
 │   ├── src/
-│   │   ├── components/      # 재사용 컴포넌트
-│   │   ├── pages/           # 페이지 컴포넌트
-│   │   ├── api/             # API 호출 함수
-│   │   ├── store/           # Zustand 스토어
-│   │   └── utils/           # 유틸리티 함수
+│   │   ├── components/              # 재사용 컴포넌트
+│   │   ├── pages/                   # 페이지 컴포넌트
+│   │   ├── api/                     # API 호출 함수
+│   │   ├── store/                   # Zustand 스토어
+│   │   └── utils/                   # 유틸리티 함수
 │   └── Dockerfile
 │
-├── AI_service_LLM/          # LLM 챗봇 서비스
+├── AI_service_LLM/                  # LLM 챗봇 서비스
 │   ├── chatbot/
-│   │   ├── core/            # 핵심 로직
-│   │   └── prompts.py       # 프롬프트 템플릿
+│   │   ├── core/                    # 핵심 로직 (orchestrator, state, routing 등)
+│   │   └── prompts.py               # 프롬프트 템플릿
 │   └── Dockerfile
 │
-├── AI_service_stt/          # STT 서비스
+├── AI_service_stt/                  # STT 서비스
 │   └── Dockerfile
 │
-├── medinote_backend/        # FastAPI 백엔드
+├── AI_service_ocr/                  # 🔥 OCR 서비스 (신규 추가)
+│   ├── api/                         # FastAPI OCR 엔드포인트
+│   ├── core/                        # PaddleOCR 실행 로직 + GPT 정제 로직
+│   ├── models/                      # 결과 스키마 정의
+│   ├── utils/                       # 파일 저장/전처리/후처리
+│   └── Dockerfile                   # OCR 전용 Docker 환경
+│
+├── medinote_backend/                # FastAPI 백엔드 (메인 API Gateway)
 │   ├── app/
-│   │   ├── routers/         # API 라우터
-│   │   ├── models/          # DB 모델
-│   │   └── services/        # 비즈니스 로직
+│   │   ├── routers/                 # API 라우터 (STT, OCR, Chatbot 등 연동)
+│   │   ├── models/                  # DB 모델
+│   │   └── services/                # 비즈니스 로직
 │   └── Dockerfile
 │
-├── docker-compose.yml       # Docker 구성
+├── docker-compose.yml               # 모든 서비스 컨테이너 선언
 └── README.md
+
 ```
 
 ## 설치 및 실행
@@ -112,7 +122,7 @@ SKN16-FINAL-1Team/
 - Docker & Docker Compose
 - Node.js 18+ (로컬 개발 시)
 - Python 3.11+ (로컬 개발 시)
-
+- OCR은 python 3.10+ (로컬개발시)
 ### 환경 변수 설정
 
 ```bash
