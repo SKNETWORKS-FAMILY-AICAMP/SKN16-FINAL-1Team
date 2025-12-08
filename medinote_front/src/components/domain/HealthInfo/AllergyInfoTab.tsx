@@ -106,7 +106,6 @@ export default function AllergyInfoTab() {
           <HiOutlineExclamationCircle className="text-alert-icon text-2xl" />
           <div>
             <h3 className="text-lg font-bold text-dark-gray">알러지 정보</h3>
-            <p className="text-sm text-gray-500">주의해야 할 알러지를 기록해요</p>
           </div>
         </div>
 

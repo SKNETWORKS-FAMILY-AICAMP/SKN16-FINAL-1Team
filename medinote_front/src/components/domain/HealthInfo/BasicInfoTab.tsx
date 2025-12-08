@@ -87,10 +87,6 @@ export default function BasicInfoTab() {
           <HiOutlineUserCircle className="text-mint text-2xl" />
           <h3 className="text-lg font-bold text-dark-gray">기본 건강정보</h3>
         </div>
-        <p className="text-sm text-gray-500 mb-6">
-          건강 관리의 기본이 되는 정보를 입력해 주세요.
-        </p>
-
         <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-x-4 gap-y-5">
           <div className="col-span-2">
             <label className="block text-sm font-bold text-gray-700 mb-1">생년월일</label>

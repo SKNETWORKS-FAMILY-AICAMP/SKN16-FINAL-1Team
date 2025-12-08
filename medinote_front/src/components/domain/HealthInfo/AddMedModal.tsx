@@ -519,7 +519,7 @@ const ModalWrapper: React.FC<{
     <div
       className={`w-full ${
         wide ? "max-w-2xl" : "max-w-md"
-      } bg-white rounded-lg shadow-popup p-6 z-50`}
+      } bg-white rounded-lg shadow-popup p-6 z-50 max-h-[90vh] overflow-y-auto`}
       onClick={(e) => e.stopPropagation()}
     >
       {children}

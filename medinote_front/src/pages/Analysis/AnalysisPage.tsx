@@ -1,13 +1,15 @@
 // src/pages/Analysis/AnalysisPage.tsx
 
-import React from 'react';
-import { 
-  HiOutlineUser, 
-  HiOutlineHeart, 
-  HiOutlineTrendingUp, 
-  HiOutlineDocumentText 
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import {
+  HiOutlineUser,
+  HiOutlineDocumentText,
+  HiOutlineRefresh
 } from 'react-icons/hi';
 import useHealthDataStore from '../../store/useHealthDataStore';
+import useUserStore from '../../store/useUserStore';
+import { postHealthAnalysis } from '../../api/chatbotAPI';
 
 // BMI 계산 함수
 const calculateBmi = (height: number, weight: number): string => {
@@ -16,7 +18,8 @@ const calculateBmi = (height: number, weight: number): string => {
   const bmi = weight / (mHeight * mHeight);
   return bmi.toFixed(1);
 };
-// (만 나이 계산 함수 - 예시)
+
+// 만 나이 계산 함수
 const getKoreanAge = (birth: string) => {
   if (!birth) return 'N/A';
   const birthDate = new Date(birth);
@@ -29,62 +32,124 @@ const getKoreanAge = (birth: string) => {
   return age;
 }
 
+// 오늘 날짜 포맷
+const getTodayString = () => {
+  const today = new Date();
+  return `${today.getFullYear()}년 ${today.getMonth() + 1}월 ${today.getDate()}일`;
+};
+
 export default function AnalysisPage() {
   const { basicInfo } = useHealthDataStore();
+  const userName = useUserStore((s) => s.user?.name) ?? '사용자';
+
+  const [report, setReport] = useState<string>('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   // 스토어의 데이터로 BMI와 나이 계산
   const bmi = calculateBmi(Number(basicInfo.height), Number(basicInfo.weight));
   const age = getKoreanAge(basicInfo.birth);
 
+  // 건강 분석 요청 함수
+  const fetchHealthAnalysis = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await postHealthAnalysis();
+      setReport(response.analysis);
+    } catch (err) {
+      console.error('건강 분석 요청 실패:', err);
+      setError('건강 분석을 불러오는데 실패했습니다. 잠시 후 다시 시도해주세요.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 페이지 로드 시 분석 요청
+  useEffect(() => {
+    fetchHealthAnalysis();
+  }, []);
+
   return (
-    <div className="flex flex-col p-4 pb-16 space-y-4">
-      {/* 상단 서브헤더 (페이지 공통) */}
-      <header className="w-full bg-mint/10 p-4 shadow-sm rounded-lg">
+    <div className="flex flex-col">
+      <header className="w-full bg-mint/10 p-4 shadow-sm">
         <h2 className="text-xl font-bold text-dark-gray">건강분석</h2>
-        <p className="text-sm text-gray-500">
-          입력된 정보를 바탕으로 건강 상태를 분석합니다.
-        </p>
+        <p className="text-sm text-gray-500">입력된 정보를 바탕으로 건강 상태를 분석합니다.</p>
       </header>
-
-      {/* 기본 건강정보 */}
-      <section className="w-full bg-white rounded-lg shadow-lg p-6 flex items-center gap-4">
-        <HiOutlineUser className="text-mint text-4xl" />
-        <div>
-          <h3 className="text-lg font-bold text-dark-gray">
-            {/* (가상) 홍길동 님 -> 나중에 useUserStore에서 가져와야 함 */}
-            홍길동 님 (만 {age}세)
-          </h3>
-          <p className="text-sm text-gray-500">
-            {basicInfo.gender} | {basicInfo.height}cm | {basicInfo.weight}kg
-          </p>
-          <p className="text-sm text-gray-700 font-semibold mt-1">
-            BMI: {bmi} {/* (BMI 결과에 따라 '과체중' 등을 표시하는 로직 추가) */}
-          </p>
-        </div>
-      </section>
-
+      <div className="p-4 pb-16 space-y-4">
+        {/* 기본 건강정보 */}
+        <Link to="/health-info" className="block">
+          <section className="w-full bg-white rounded-lg shadow-lg p-6 flex items-center gap-4 hover:bg-gray-50 transition-colors cursor-pointer">
+            <HiOutlineUser className="text-mint text-4xl" />
+            <div>
+              <h3 className="text-lg font-bold text-dark-gray">
+                {userName} 님 (만 {age}세)
+              </h3>
+              <p className="text-sm text-gray-500">
+                {basicInfo.gender || '성별 미입력'} | {basicInfo.height || '-'}cm | {basicInfo.weight || '-'}kg
+              </p>
+              <p className="text-sm text-gray-700 font-semibold mt-1">
+                BMI: {bmi}
+              </p>
+            </div>
+          </section>
+        </Link>
+      
       {/* 건강 분석 리포트 */}
       <section className="w-full bg-white rounded-lg shadow-lg">
-        <div className="flex items-center gap-2 p-4 border-b">
-          <HiOutlineDocumentText className="text-mint text-2xl" />
-          <h3 className="text-lg font-bold text-dark-gray">건강 분석 리포트</h3>
+        <div className="flex items-center justify-between p-4 border-b">
+          <div className="flex items-center gap-2">
+            <HiOutlineDocumentText className="text-mint text-2xl" />
+            <h3 className="text-lg font-bold text-dark-gray">건강 분석 리포트</h3>
+          </div>
+          <button
+            onClick={fetchHealthAnalysis}
+            disabled={loading}
+            className="p-2 text-mint hover:bg-mint/10 rounded-full disabled:opacity-50"
+            title="다시 분석하기"
+          >
+            <HiOutlineRefresh className={`text-xl ${loading ? 'animate-spin' : ''}`} />
+          </button>
         </div>
-        
-        {/* 메모장 형식 UI */}
+
+        {/* 리포트 내용 */}
         <div className="p-6 bg-yellow-50 min-h-[200px] text-dark-gray leading-relaxed">
-          <p className="font-semibold text-gray-700">2025년 11월 8일</p>
-          <br />
-          <p>
-            - 현재 BMI 지수({bmi})는 <span className="font-bold text-red-600">과체중</span> 범위입니다. 
-            체중 관리를 위한 식단 조절 및 유산소 운동을 권고합니다.
-          </p>
-          <p>
-            - '고혈압' 및 '당뇨병(2형)' 만성질환을 보유 중입니다. '아모디핀', '메트포민'을 꾸준히 복용하고 계신 점이 긍정적입니다.
-          </p>
-          <p>
-            - 최근 1주일간 건강 추세가 상승세입니다. 좋은 컨디션을 유지하세요!
-          </p>
+          <p className="font-semibold text-gray-700 mb-4">{getTodayString()}</p>
+
+          {loading && (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-mint"></div>
+              <span className="ml-3 text-gray-500">건강 상태를 분석 중입니다...</span>
+            </div>
+          )}
+
+          {error && !loading && (
+            <div className="text-red-500 text-center py-8">
+              <p>{error}</p>
+              <button
+                onClick={fetchHealthAnalysis}
+                className="mt-4 px-4 py-2 bg-mint text-white rounded-lg hover:bg-mint/90"
+              >
+                다시 시도
+              </button>
+            </div>
+          )}
+
+          {!loading && !error && report && (
+            <div className="whitespace-pre-line">
+              {report}
+            </div>
+          )}
+
+          {!loading && !error && !report && (
+            <p className="text-gray-500 text-center py-8">
+              분석 결과가 없습니다. 새로고침을 눌러주세요.
+            </p>
+          )}
         </div>
       </section>
+     </div>
     </div>
   );
 }

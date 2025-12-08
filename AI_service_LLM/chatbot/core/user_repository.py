@@ -15,8 +15,7 @@ except Exception:
     pass
 
 # 📌 백엔드 Base URL (Medinote_backend)
-#    .env 의 BACKEND_BASE_URL 이 우선, 없으면 192.168.0.10:8000 사용
-BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://192.168.0.10:8000").rstrip("/")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/")
 
 
 def _get(path: str) -> Any:
@@ -32,7 +31,7 @@ def _get(path: str) -> Any:
     else:
         if not path.startswith("/"):
             path = "/" + path
-        full_url = BACKEND_BASE_URL + path
+        full_url = BACKEND_URL + path
 
     try:
         # 필요하면 여기서 토큰 붙이면 됨

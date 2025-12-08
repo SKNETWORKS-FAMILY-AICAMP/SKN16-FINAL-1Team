@@ -44,7 +44,7 @@ export default function ProfileDropdown({ onClose }: ProfileDropdownProps) {
       </div>
 
       <ul className="py-2">
-        <MenuItem icon={<HiOutlineUser />} text="프로필" onClick={goSettings} />
+        {/* <MenuItem icon={<HiOutlineUser />} text="프로필" onClick={goSettings} /> */}
         <MenuItem icon={<HiOutlineCog />} text="설정" onClick={goSettings} />
         {/* <MenuItem icon={<HiOutlineMoon />} text={`테마: ${theme === 'light' ? '라이트' : '다크'}`} onClick={toggleTheme} /> */}
       </ul>

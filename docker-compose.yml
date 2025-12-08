@@ -71,7 +71,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       CHROMA_DB_DIR: ${CHROMA_DB_DIR}
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/medinote  # 추가
-      BACKEND_BASE_URL: http://backend:8000
+      BACKEND_URL: http://backend:8000
     volumes:
       # 호스트의 /home/ubuntu/chroma_db → 컨테이너 /app/chroma_db 에 마운트 (옵션)
       - /home/ubuntu/chroma_db:/app/chroma_db
