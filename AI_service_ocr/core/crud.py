@@ -1,3 +1,4 @@
+# core/crud.py
 from __future__ import annotations
 
 import os
@@ -33,6 +34,7 @@ def save_file(upload: UploadFile) -> str:
     with open(file_path, "wb") as f:
         shutil.copyfileobj(upload.file, f)
 
+    print(f"[OCR] Saved upload to: {file_path}")
     return file_path
 
 
@@ -57,6 +59,7 @@ def create_file_record(
     db.add(file)
     db.commit()
     db.refresh(file)
+    print(f"[OCR] File row created: file_id={file.file_id}, size={size}")
     return file
 
 
@@ -64,7 +67,12 @@ def create_file_record(
 # Paddle OCR 실행
 # -----------------------------
 def run_ocr_model(path: str) -> str:
-    return extract_text_from_image(path)
+    print(f"[OCR] Running Paddle OCR on: {path}")
+    text = extract_text_from_image(path)
+    print(f"[OCR] OCR text length: {len(text)}")
+    print("[OCR] OCR text head:")
+    print(text[:500])
+    return text
 
 
 # -----------------------------
@@ -92,20 +100,30 @@ def run_ocr_and_save(
     db.add(ocr)
     db.commit()
     db.refresh(ocr)
+    print(
+        f"[OCR] OCRJob created: ocr_id={ocr.ocr_id}, "
+        f"source_type={source_type}, status={ocr.status}"
+    )
 
     try:
         text = run_ocr_model(path)
         ocr.text = text
         ocr.status = "DONE"
+        print(f"[OCR] OCRJob {ocr.ocr_id} DONE, text_len={len(text)}")
     except Exception as e:
         ocr.status = "FAILED"
         ocr.text = f"OCR ERROR: {e}"
+        print(f"[OCR][ERROR] OCRJob {ocr.ocr_id} FAILED: {e}")
 
     ocr.completed_at = datetime.utcnow()
     db.add(ocr)
     db.commit()
     db.refresh(ocr)
 
+    print(
+        f"[OCR] OCRJob final: ocr_id={ocr.ocr_id}, status={ocr.status}, "
+        f"completed_at={ocr.completed_at}"
+    )
     return ocr
 
 
@@ -117,8 +135,15 @@ def parse_ocr_text_to_visit(text: str) -> VisitFormSchema:
     OCR result text → Visit Form 자동 구조화
     GPT가 camelCase / 기타 키로 줘도 스키마에 맞게 매핑
     """
+    print("\n[PARSE][VISIT] ===== parse_ocr_text_to_visit START =====")
+    print(f"[PARSE][VISIT] input text length: {len(text)}")
+    print("[PARSE][VISIT] input head:")
+    print(text[:500])
+
     try:
         raw = parse_visit_form_from_ocr(text) or {}
+        print("[PARSE][VISIT] raw dict from GPT:")
+        print(raw)
 
         data: dict[str, str] = {}
 
@@ -176,10 +201,13 @@ def parse_ocr_text_to_visit(text: str) -> VisitFormSchema:
             or str(datetime.today().date())
         )
 
+        print("[PARSE][VISIT] mapped data:")
+        print(data)
+        print("[PARSE][VISIT] ===== SUCCESS =====\n")
         return VisitFormSchema(**data)
 
-    except Exception:
-        # 완전 실패 시 최소한 날짜 + 증상 일부만 채워서 반환
+    except Exception as e:
+        print(f"[PARSE][VISIT][ERROR] parsing failed: {e}")
         dummy = {
             "hospital": "",
             "doctor_name": "",
@@ -189,6 +217,9 @@ def parse_ocr_text_to_visit(text: str) -> VisitFormSchema:
             "diagnosis_name": "",
             "date": str(datetime.today().date()),
         }
+        print("[PARSE][VISIT] returning dummy data:")
+        print(dummy)
+        print("[PARSE][VISIT] ===== FALLBACK =====\n")
         return VisitFormSchema(**dummy)
 
 
@@ -200,8 +231,15 @@ def parse_ocr_text_to_prescription(text: str) -> PrescriptionFormSchema:
     OCR result text → Prescription Form 자동 구조화
     GPT가 camelCase / 다양한 키로 줘도 스키마에 맞게 매핑
     """
+    print("\n[PARSE][PRESC] ===== parse_ocr_text_to_prescription START =====")
+    print(f"[PARSE][PRESC] input text length: {len(text)}")
+    print("[PARSE][PRESC] input head:")
+    print(text[:500])
+
     try:
         raw = parse_prescription_form_from_ocr(text) or {}
+        print("[PARSE][PRESC] raw dict from GPT:")
+        print(raw)
 
         data: dict[str, object] = {}
 
@@ -223,7 +261,12 @@ def parse_ocr_text_to_prescription(text: str) -> PrescriptionFormSchema:
         )
 
         # 용량 / 단위
-        data["dose"] = raw.get("dose") or raw.get("dose_amount") or raw.get("strength") or ""
+        data["dose"] = (
+            raw.get("dose")
+            or raw.get("dose_amount")
+            or raw.get("strength")
+            or ""
+        )
         data["unit"] = raw.get("unit") or raw.get("dose_unit") or ""
 
         # 복용 시간(schedule)
@@ -253,12 +296,18 @@ def parse_ocr_text_to_prescription(text: str) -> PrescriptionFormSchema:
         )
 
         # 시작일 / 종료일
-        data["start_date"] = raw.get("start_date") or raw.get("startDate") or ""
+        data["start_date"] = (
+            raw.get("start_date") or raw.get("startDate") or ""
+        )
         data["end_date"] = raw.get("end_date") or raw.get("endDate") or ""
 
+        print("[PARSE][PRESC] mapped data:")
+        print(data)
+        print("[PARSE][PRESC] ===== SUCCESS =====\n")
         return PrescriptionFormSchema(**data)
 
-    except Exception:
+    except Exception as e:
+        print(f"[PARSE][PRESC][ERROR] parsing failed: {e}")
         dummy = {
             "med_name": "",
             "dosage_form": "",
@@ -269,4 +318,7 @@ def parse_ocr_text_to_prescription(text: str) -> PrescriptionFormSchema:
             "start_date": "",
             "end_date": "",
         }
+        print("[PARSE][PRESC] returning dummy data:")
+        print(dummy)
+        print("[PARSE][PRESC] ===== FALLBACK =====\n")
         return PrescriptionFormSchema(**dummy)

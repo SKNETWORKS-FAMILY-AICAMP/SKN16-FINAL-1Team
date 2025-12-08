@@ -16,6 +16,12 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 _client: OpenAI | None = None
 
+# 기본 디버그: 환경변수/모델 확인
+print("[GPT] ===== gpt_client.py loaded =====")
+print(f"[GPT] OPENAI_API_KEY loaded: {bool(OPENAI_API_KEY)}")
+print(f"[GPT] OCR_GPT_MODEL: {OCR_GPT_MODEL}")
+print("=======================================")
+
 
 def get_client() -> OpenAI:
     global _client
@@ -71,6 +77,12 @@ VISIT_SYSTEM_PROMPT = """
 def parse_visit_form_from_ocr(text: str) -> Dict[str, Any]:
     client = get_client()
 
+    print("\n[GPT][VISIT] ===== LLM CALL START =====")
+    print(f"[GPT][VISIT] model: {OCR_GPT_MODEL}")
+    print(f"[GPT][VISIT] input length: {len(text)}")
+    print("[GPT][VISIT] input head:")
+    print(text[:500])
+
     resp = client.chat.completions.create(
         model=OCR_GPT_MODEL,
         temperature=0.1,
@@ -81,8 +93,20 @@ def parse_visit_form_from_ocr(text: str) -> Dict[str, Any]:
         ],
     )
 
-    content = resp.choices[0].message.content
-    return json.loads(content)
+    content = resp.choices[0].message.content or "{}"
+    print("[GPT][VISIT] raw content from model:")
+    print(content)
+
+    try:
+        parsed = json.loads(content)
+    except Exception as e:
+        print(f"[GPT][VISIT][ERROR] json.loads failed: {e}")
+        # 그대로 예외를 올려서 crud 쪽 except에서 dummy 생성
+        raise
+
+    print(f"[GPT][VISIT] parsed keys: {list(parsed.keys())}")
+    print("[GPT][VISIT] ===== LLM CALL END =====\n")
+    return parsed
 
 
 # ------------------------------------------
@@ -149,6 +173,12 @@ PRESCRIPTION_SYSTEM_PROMPT = """
 def parse_prescription_form_from_ocr(text: str) -> Dict[str, Any]:
     client = get_client()
 
+    print("\n[GPT][PRESC] ===== LLM CALL START =====")
+    print(f"[GPT][PRESC] model: {OCR_GPT_MODEL}")
+    print(f"[GPT][PRESC] input length: {len(text)}")
+    print("[GPT][PRESC] input head:")
+    print(text[:500])
+
     resp = client.chat.completions.create(
         model=OCR_GPT_MODEL,
         temperature=0.1,
@@ -159,5 +189,17 @@ def parse_prescription_form_from_ocr(text: str) -> Dict[str, Any]:
         ],
     )
 
-    content = resp.choices[0].message.content
-    return json.loads(content)
+    content = resp.choices[0].message.content or "{}"
+    print("[GPT][PRESC] raw content from model:")
+    print(content)
+
+    try:
+        parsed = json.loads(content)
+    except Exception as e:
+        print(f"[GPT][PRESC][ERROR] json.loads failed: {e}")
+        # crud 쪽에서 dummy 처리하게 예외 그대로 올림
+        raise
+
+    print(f"[GPT][PRESC] parsed keys: {list(parsed.keys())}")
+    print("[GPT][PRESC] ===== LLM CALL END =====\n")
+    return parsed
