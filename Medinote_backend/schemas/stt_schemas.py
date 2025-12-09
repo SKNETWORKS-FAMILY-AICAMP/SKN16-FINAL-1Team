@@ -3,8 +3,9 @@
 # STT SCHEMAS
 # ============================================================
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, field_validator
 from typing import Optional
+from datetime import date as DateType
 
 
 # ------------------------------------------------------------
@@ -15,8 +16,7 @@ class STTAnalyzeResponse(BaseModel):
     stt_id: str
     status: str  # "pending"
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ------------------------------------------------------------
@@ -29,8 +29,7 @@ class STTResultInput(BaseModel):
     notes: Optional[str] = None
     date: Optional[str] = None     # "YYYY-MM-DD"
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ------------------------------------------------------------
@@ -45,5 +44,14 @@ class STTStatusResponse(BaseModel):
     notes: Optional[str] = None
     date: Optional[str] = None
 
-    class Config:
-        orm_mode = True
+    # DB에서 datetime.date 객체가 오면 문자열로 변환
+    @field_validator('date', mode='before')
+    @classmethod
+    def convert_date_to_str(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, DateType):
+            return v.strftime("%Y-%m-%d")
+        return str(v)
+
+    model_config = ConfigDict(from_attributes=True)
