@@ -8,7 +8,7 @@ from utils.jwt_handler import decode_access_token
 # True  → 개발용 (FAKE_USER_ID)
 # False → 실제 JWT 사용
 # ================================
-USE_FAKE_AUTH = True
+USE_FAKE_AUTH = False
 
 FAKE_USER_ID = 1  # 개발용 고정 유저
 

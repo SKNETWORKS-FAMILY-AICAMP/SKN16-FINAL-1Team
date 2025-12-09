@@ -22,7 +22,7 @@ export default function AddHistoryMethodModal({ onClose, onSelectMethod }: Modal
       >
         {/* 상단 제목 및 닫기 버튼 */}
         <div className="flex justify-between items-center mb-2">
-          <h2 className="text-xl font-bold text-dark-gray">새 진료기록 추가</h2>
+          <h2 className="text-xl font-bold text-dark-gray">추가</h2>
           <button 
             onClick={onClose} 
             className="text-gray-400 hover:text-dark-gray text-2xl"
@@ -39,19 +39,16 @@ export default function AddHistoryMethodModal({ onClose, onSelectMethod }: Modal
           <MethodCard
             icon={<HiOutlinePencilAlt />}
             title="직접 입력"
-            description="진료 내역을 직접 입력합니다."
             onClick={() => onSelectMethod('direct')}
           />
           <MethodCard
             icon={<HiOutlineMicrophone />}
             title="음성 녹음"
-            description="진료 대화를 녹음해 자동으로 입력합니다."
             onClick={() => onSelectMethod('voice')}
           />
           <MethodCard
             icon={<HiOutlineCamera />}
-            title="OCR 스캔"
-            description="진료확인서 또는 진단서를 간편하게 스캔합니다."
+            title="진단서 스캔"
             onClick={() => onSelectMethod('ocr')}
           />
         </div>
@@ -64,21 +61,17 @@ export default function AddHistoryMethodModal({ onClose, onSelectMethod }: Modal
 type CardProps = {
   icon: React.ReactNode;
   title: string;
-  description: string;
   onClick: () => void;
 };
 
-function MethodCard({ icon, title, description, onClick }: CardProps) {
+function MethodCard({ icon, title, onClick }: CardProps) {
   return (
     <button
       onClick={onClick}
       className="w-full flex items-center gap-4 p-4 border rounded-lg text-left hover:bg-mint/10 hover:border-mint transition-all"
     >
       <div className="text-3xl text-mint">{icon}</div>
-      <div>
-        <h3 className="font-bold text-lg text-dark-gray">{title}</h3>
-        <p className="text-sm text-gray-500">{description}</p>
-      </div>
+      <h3 className="font-bold text-lg text-dark-gray">{title}</h3>
     </button>
   );
 }

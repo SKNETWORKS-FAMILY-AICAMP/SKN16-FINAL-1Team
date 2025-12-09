@@ -492,19 +492,16 @@ export default function AddMedModal({
           {ocrStep === "idle" && (
             <>
               <HiOutlineCamera className="text-3xl text-mint mx-auto mb-2" />
-              <h3 className="font-semibold text-dark-gray mb-1">
-                처방전을 스캔할까요?
-              </h3>
-              <p className="text-sm text-gray-600 mb-3">
-                OCR 스캔으로 약 정보를 자동 입력합니다.
-              </p>
               <button
                 type="button"
                 onClick={() => setOcrStep("selectMethod")}
                 className="bg-mint text-white px-4 py-2 rounded-lg font-semibold hover:bg-mint-dark"
               >
-                OCR 스캔하기
+                처방전 스캔하기
               </button>
+              <p className="text-sm text-gray-600 mb-3">
+                약 정보를 자동 입력합니다.
+              </p>              
             </>
           )}
 

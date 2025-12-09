@@ -102,7 +102,7 @@ export default function DashboardPage() {
               </div>
               {todays.length === 0 ? (
                 <p className="text-sm text-gray-400">
-                  아직 오늘의 일정이 없습니다.
+                  오늘의 일정이 없습니다.
                 </p>
               ) : (
                 <ul className="space-y-1">
@@ -144,7 +144,7 @@ export default function DashboardPage() {
       <section className="w-full bg-white rounded-lg shadow-lg p-5">
         <div className="flex justify-between items-end mb-3">
           <h3 className="text-lg font-bold text-dark-gray">
-            오늘의 복약 관리
+            오늘의 약 관리
           </h3>
           <span className="text-sm text-gray-500 font-medium">
             {progressPercent.toFixed(0)}% 완료 ({checkedMeds}/{totalMeds})
@@ -178,7 +178,7 @@ export default function DashboardPage() {
                 to="/health-info"
                 className="text-sm text-mint font-bold hover:underline mt-1 inline-block"
               >
-                + 약 추가하러 가기
+                + 약 추가하기
               </Link>
             </div>
           )}

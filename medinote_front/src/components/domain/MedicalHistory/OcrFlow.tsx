@@ -166,7 +166,7 @@ export default function OcrFlow({ onComplete, onCancel }: Props) {
       onComplete(mapped);
     } catch (err) {
       console.error("Visit OCR 처리 오류:", err);
-      toast.error("OCR 처리 중 오류가 발생했습니다. 다시 시도해 주세요.");
+      toast.error("처리 중 오류가 발생했습니다. 다시 시도해 주세요.");
       setOcrStep("preview");
     }
   };
@@ -190,10 +190,7 @@ export default function OcrFlow({ onComplete, onCancel }: Props) {
         {ocrStep === "selectMethod" && (
           <div>
             <HiOutlineCamera className="text-3xl text-mint mx-auto mb-2" />
-            <h3 className="font-semibold text-dark-gray mb-4">OCR 스캔</h3>
-            <p className="text-sm text-gray-600 mb-4">
-              진료확인서를 업로드하면 자동으로 값을 채워드려요.
-            </p>
+            <h3 className="font-semibold text-dark-gray mb-4">진단서 스캔</h3>
 
             <input
               type="file"

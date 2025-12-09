@@ -140,7 +140,7 @@ export default function MedicalHistoryPage() {
               onClick={() => setPageState("selectMethod")}
               className="w-full flex items-center justify-center gap-2 p-3 bg-mint hover:bg-mint-dark text-white font-bold rounded-lg shadow-lg"
             >
-              <HiOutlinePlus className="text-xl" /> 새 진료기록 추가
+              <HiOutlinePlus className="text-xl" /> 추가
             </button>
             <div className="space-y-3">
               {displayed.map((h) => (

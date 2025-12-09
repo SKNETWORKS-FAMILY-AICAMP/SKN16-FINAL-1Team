@@ -75,7 +75,7 @@ export default function AnalysisPage() {
     <div className="flex flex-col">
       <header className="w-full bg-mint/10 p-4 shadow-sm">
         <h2 className="text-xl font-bold text-dark-gray">건강분석</h2>
-        <p className="text-sm text-gray-500">입력된 정보를 바탕으로 건강 상태를 분석합니다.</p>
+        <p className="text-sm text-gray-500">사용자의 건강 상태를 분석합니다.</p>
       </header>
       <div className="p-4 pb-16 space-y-4">
         {/* 기본 건강정보 */}
